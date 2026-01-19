@@ -1,6 +1,9 @@
 package server
 
 import (
+	"bytes"
+	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/clash-version/remnawave-node-go/internal/middleware"
@@ -82,9 +85,17 @@ func (s *Server) setupRoutes() {
 // === Xray Handlers ===
 
 func (s *Server) handleXrayStart(c *gin.Context) {
+	// Read raw body for debugging
+	bodyBytes, _ := c.GetRawData()
+	s.log.Debugw("Received xray start request", "body", string(bodyBytes))
+
+	// Re-set body for binding
+	c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
 	var req services.StartRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		s.log.Errorw("Failed to bind JSON for xray start", "error", err, "body", string(bodyBytes))
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid request format: %v", err)})
 		return
 	}
 
