@@ -138,6 +138,34 @@ func (s *InternalService) RemoveUserFromAllInbounds(email string) []string {
 	return result
 }
 
+// GetUsersInInbound returns all user emails in a specific inbound
+func (s *InternalService) GetUsersInInbound(tag string) []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var users []string
+	for email, tags := range s.userInboundMap {
+		if _, exists := tags[tag]; exists {
+			users = append(users, email)
+		}
+	}
+	return users
+}
+
+// GetUsersCountInInbound returns the count of users in a specific inbound
+func (s *InternalService) GetUsersCountInInbound(tag string) int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	count := 0
+	for _, tags := range s.userInboundMap {
+		if _, exists := tags[tag]; exists {
+			count++
+		}
+	}
+	return count
+}
+
 // XrayInbound represents an inbound configuration
 type XrayInbound struct {
 	Tag      string `json:"tag"`

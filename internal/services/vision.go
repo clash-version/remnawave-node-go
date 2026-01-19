@@ -9,14 +9,14 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/clash-version/remnawave-node-go/pkg/xtls"
+	"github.com/clash-version/remnawave-node-go/pkg/xraycore"
 )
 
 // VisionService manages IP blocking via Xray router rules
 type VisionService struct {
 	mu         sync.RWMutex
 	logger     *zap.Logger
-	xtls       *xtls.Client
+	xrayCore   *xraycore.Instance
 	blockedIPs map[string]string // IP -> ruleTag (MD5 hash)
 	blockTag   string
 }
@@ -27,14 +27,14 @@ type VisionConfig struct {
 }
 
 // NewVisionService creates a new VisionService
-func NewVisionService(cfg *VisionConfig, xtls *xtls.Client, logger *zap.Logger) *VisionService {
+func NewVisionService(cfg *VisionConfig, xrayCore *xraycore.Instance, logger *zap.Logger) *VisionService {
 	blockTag := cfg.BlockTag
 	if blockTag == "" {
 		blockTag = "BLOCK"
 	}
 	return &VisionService{
 		logger:     logger,
-		xtls:       xtls,
+		xrayCore:   xrayCore,
 		blockedIPs: make(map[string]string),
 		blockTag:   blockTag,
 	}
@@ -75,10 +75,9 @@ func (s *VisionService) BlockIP(ctx context.Context, req *BlockIPRequest) (*Bloc
 	// Generate rule tag from IP hash
 	ruleTag := s.getIPHash(req.IP)
 
-	// Add rule via Xray router
-	router := s.xtls.Router()
-	if router != nil {
-		if err := router.AddRule(ctx, ruleTag, req.IP); err != nil {
+	// Add rule via embedded Xray router
+	if s.xrayCore != nil && s.xrayCore.IsRunning() {
+		if err := s.xrayCore.AddRoutingRule(ctx, ruleTag, req.IP, s.blockTag); err != nil {
 			s.logger.Error("Failed to add block rule",
 				zap.String("ip", req.IP),
 				zap.String("ruleTag", ruleTag),
@@ -124,10 +123,9 @@ func (s *VisionService) UnblockIP(ctx context.Context, req *UnblockIPRequest) (*
 		}, nil
 	}
 
-	// Remove rule via Xray router
-	router := s.xtls.Router()
-	if router != nil {
-		if err := router.RemoveRule(ctx, ruleTag, req.IP); err != nil {
+	// Remove rule via embedded Xray router
+	if s.xrayCore != nil && s.xrayCore.IsRunning() {
+		if err := s.xrayCore.RemoveRoutingRule(ctx, ruleTag); err != nil {
 			s.logger.Error("Failed to remove block rule",
 				zap.String("ip", req.IP),
 				zap.String("ruleTag", ruleTag),
@@ -168,10 +166,9 @@ func (s *VisionService) ClearBlockedIPs(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	router := s.xtls.Router()
 	for ip, ruleTag := range s.blockedIPs {
-		if router != nil {
-			if err := router.RemoveRule(ctx, ruleTag, ip); err != nil {
+		if s.xrayCore != nil && s.xrayCore.IsRunning() {
+			if err := s.xrayCore.RemoveRoutingRule(ctx, ruleTag); err != nil {
 				s.logger.Warn("Failed to remove block rule during clear",
 					zap.String("ip", ip),
 					zap.String("ruleTag", ruleTag),

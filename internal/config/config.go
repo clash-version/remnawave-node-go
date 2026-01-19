@@ -19,20 +19,9 @@ type Config struct {
 	// Parsed payload from SECRET_KEY
 	NodePayload *crypto.NodePayload
 
-	// Xray gRPC settings
-	XtlsIP   string
-	XtlsPort int
-
 	// Feature flags
 	DisableHashedSetCheck bool
 }
-
-// Internal API constants
-const (
-	XrayInternalAPIPort = 61001
-	SupervisordRPCPort  = 61002
-	XrayGRPCPort        = 61000
-)
 
 // Load reads configuration from environment variables
 func Load() (*Config, error) {
@@ -59,24 +48,10 @@ func Load() (*Config, error) {
 	}
 	cfg.NodePayload = payload
 
-	// XTLS settings
-	cfg.XtlsIP = getEnv("XTLS_IP", "127.0.0.1")
-	xtlsPortStr := getEnv("XTLS_PORT", "61000")
-	xtlsPort, err := strconv.Atoi(xtlsPortStr)
-	if err != nil {
-		return nil, fmt.Errorf("invalid XTLS_PORT: %w", err)
-	}
-	cfg.XtlsPort = xtlsPort
-
 	// Feature flags
 	cfg.DisableHashedSetCheck = getEnvBool("DISABLE_HASHED_SET_CHECK", false)
 
 	return cfg, nil
-}
-
-// GetXtlsAddress returns the full address for Xray gRPC connection
-func (c *Config) GetXtlsAddress() string {
-	return fmt.Sprintf("%s:%d", c.XtlsIP, c.XtlsPort)
 }
 
 // getEnv returns environment variable value or default

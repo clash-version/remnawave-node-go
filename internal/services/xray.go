@@ -2,15 +2,12 @@
 package services
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -19,8 +16,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/clash-version/remnawave-node-go/pkg/supervisord"
-	"github.com/clash-version/remnawave-node-go/pkg/xtls"
+	"github.com/clash-version/remnawave-node-go/pkg/xraycore"
 )
 
 // ErrXrayAlreadyProcessing indicates Xray is already being started/restarted
@@ -30,12 +26,9 @@ var ErrXrayAlreadyProcessing = errors.New("Xray is already being processed")
 type XrayService struct {
 	mu           sync.RWMutex
 	logger       *zap.Logger
-	supervisor   *supervisord.Client
-	xtls         *xtls.Client
+	xrayCore     *xraycore.Instance
 	internal     *InternalService
-	processName  string
 	configDir    string
-	xrayBinary   string
 	isConfigured bool
 
 	// Concurrency protection
@@ -44,76 +37,42 @@ type XrayService struct {
 	// Online status tracking
 	isXrayOnline bool
 
-	// Cached version info
-	cachedVersion string
-
 	// Disable hash check (skip restart optimization)
 	disableHashedSetCheck bool
 }
 
 // XrayConfig holds Xray service configuration
 type XrayConfig struct {
-	ProcessName           string
 	ConfigDir             string
-	XrayBinary            string // Path to xray binary, default: "xray"
-	DisableHashedSetCheck bool   // If true, skip hash-based restart optimization
+	DisableHashedSetCheck bool // If true, skip hash-based restart optimization
 }
 
 // NewXrayService creates a new XrayService
-func NewXrayService(cfg *XrayConfig, supervisor *supervisord.Client, xtls *xtls.Client, internal *InternalService, logger *zap.Logger) *XrayService {
-	xrayBinary := cfg.XrayBinary
-	if xrayBinary == "" {
-		xrayBinary = "xray"
-	}
+func NewXrayService(cfg *XrayConfig, xrayCore *xraycore.Instance, internal *InternalService, logger *zap.Logger) *XrayService {
 	return &XrayService{
 		logger:                logger,
-		supervisor:            supervisor,
-		xtls:                  xtls,
+		xrayCore:              xrayCore,
 		internal:              internal,
-		processName:           cfg.ProcessName,
 		configDir:             cfg.ConfigDir,
-		xrayBinary:            xrayBinary,
 		isXrayOnline:          false,
 		disableHashedSetCheck: cfg.DisableHashedSetCheck,
 	}
 }
 
-// checkXrayHealth checks if Xray is responding to gRPC calls
-func (s *XrayService) checkXrayHealth(ctx context.Context) bool {
-	const maxRetries = 10
-	const retryInterval = 2 * time.Second
+// GetXrayCore returns the underlying Xray-core instance
+func (s *XrayService) GetXrayCore() *xraycore.Instance {
+	return s.xrayCore
+}
 
-	stats := s.xtls.Stats()
-	if stats == nil {
+// checkXrayHealth checks if Xray is responding
+func (s *XrayService) checkXrayHealth(ctx context.Context) bool {
+	if s.xrayCore == nil || !s.xrayCore.IsRunning() {
 		return false
 	}
 
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-		_, err := stats.GetSystemStats(ctx, false)
-		if err == nil {
-			return true
-		}
-
-		retriesLeft := maxRetries - attempt
-		if retriesLeft > 0 {
-			s.logger.Debug("Get Xray internal status attempt failed",
-				zap.Int("attempt", attempt),
-				zap.Int("retriesLeft", retriesLeft),
-				zap.Error(err))
-
-			select {
-			case <-ctx.Done():
-				s.logger.Error("Context cancelled while checking Xray health")
-				return false
-			case <-time.After(retryInterval):
-				// Continue to next attempt
-			}
-		}
-	}
-
-	s.logger.Error("Failed to get Xray internal status after all retries",
-		zap.Int("totalAttempts", maxRetries))
-	return false
+	// Try to get system stats to verify it's working
+	_, err := s.xrayCore.GetSystemStats(ctx)
+	return err == nil
 }
 
 // XrayConfigData represents the Xray configuration file structure
@@ -125,13 +84,6 @@ type XrayConfigData struct {
 	Routing   interface{}   `json:"routing,omitempty"`
 	Stats     interface{}   `json:"stats,omitempty"`
 	Policy    interface{}   `json:"policy,omitempty"`
-}
-
-// Default Xray API configuration (matches Node.js XRAY_DEFAULT_API_MODEL)
-var defaultAPIConfig = map[string]interface{}{
-	"services": []string{"HandlerService", "StatsService", "RoutingService"},
-	"listen":   "127.0.0.1:61000",
-	"tag":      "REMNAWAVE_API",
 }
 
 // Default policy configuration (matches Node.js XRAY_DEFAULT_POLICY_MODEL)
@@ -151,8 +103,8 @@ var defaultPolicyConfig = map[string]interface{}{
 	},
 }
 
-// generateApiConfig adds default API, Stats, and Policy configurations to the Xray config
-// This matches the Node.js generateApiConfig function behavior
+// generateApiConfig adds Stats and Policy configurations to the Xray config
+// Note: We don't need API/gRPC config since we're using embedded Xray-core
 func generateApiConfig(config map[string]interface{}) map[string]interface{} {
 	result := make(map[string]interface{})
 
@@ -164,10 +116,7 @@ func generateApiConfig(config map[string]interface{}) map[string]interface{} {
 	// Add stats configuration (empty object)
 	result["stats"] = map[string]interface{}{}
 
-	// Add API configuration
-	result["api"] = defaultAPIConfig
-
-	// Build and add policy configuration
+	// Build and add policy configuration (required for user stats)
 	result["policy"] = defaultPolicyConfig
 
 	return result
@@ -274,7 +223,6 @@ func (s *XrayService) Start(ctx context.Context, req *StartRequest) (*StartRespo
 	defer s.mu.Unlock()
 
 	// If Xray is online, hashed set check is enabled, and not force restart, check if restart is needed
-	// This matches Node.js: if (this.isXrayOnline && !this.disableHashedSetCheck && !body.internals.forceRestart)
 	if s.isXrayOnline && !s.disableHashedSetCheck && !req.Internals.ForceRestart && req.Internals.Hashes != nil && s.internal != nil {
 		// First verify Xray is actually healthy
 		if s.checkXrayHealth(ctx) {
@@ -283,7 +231,7 @@ func (s *XrayService) Start(ctx context.Context, req *StartRequest) (*StartRespo
 			if !needRestart {
 				s.logger.Info("No changes detected, skipping restart",
 					zap.Duration("checkTime", time.Since(startTime)))
-				version := s.cachedVersion
+				version := s.GetVersion()
 				return &StartResponse{
 					Response: StartResponseData{
 						IsStarted:         true,
@@ -312,7 +260,7 @@ func (s *XrayService) Start(ctx context.Context, req *StartRequest) (*StartRespo
 		if !needRestart {
 			s.logger.Info("No changes detected, skipping restart",
 				zap.Duration("checkTime", time.Since(startTime)))
-			version := s.cachedVersion
+			version := s.GetVersion()
 			return &StartResponse{
 				Response: StartResponseData{
 					IsStarted:         true,
@@ -325,7 +273,7 @@ func (s *XrayService) Start(ctx context.Context, req *StartRequest) (*StartRespo
 		}
 	}
 
-	// Generate full config with API, Stats, and Policy (matches Node.js generateApiConfig)
+	// Generate full config with Stats and Policy
 	fullConfig := generateApiConfig(req.XrayConfig)
 
 	// Convert fullConfig to JSON bytes
@@ -334,7 +282,7 @@ func (s *XrayService) Start(ctx context.Context, req *StartRequest) (*StartRespo
 		return errorResponse(fmt.Sprintf("failed to marshal config: %v", err)), nil
 	}
 
-	// Write config to file
+	// Write config to file for reference
 	configPath := filepath.Join(s.configDir, "config.json")
 	if err := os.MkdirAll(s.configDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create config directory: %w", err)
@@ -353,18 +301,13 @@ func (s *XrayService) Start(ctx context.Context, req *StartRequest) (*StartRespo
 		}
 	}
 
-	// Start the process via supervisord
-	if err := s.supervisor.StartProcess(ctx, s.processName, true); err != nil {
+	// Start the embedded Xray-core
+	if err := s.xrayCore.Start(ctx, configBytes); err != nil {
 		s.isXrayOnline = false
 		s.logger.Error("Failed to start Xray",
 			zap.Error(err),
 			zap.Duration("elapsed", time.Since(startTime)))
 		return errorResponse(err.Error()), nil
-	}
-
-	// Wait for gRPC to be ready and verify health
-	if err := s.xtls.WaitForReady(ctx, 10*time.Second); err != nil {
-		s.logger.Warn("Xray started but gRPC not ready", zap.Error(err))
 	}
 
 	// Verify Xray is actually responding
@@ -407,7 +350,8 @@ func (s *XrayService) Stop(ctx context.Context) (*StopResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err := s.supervisor.StopProcess(ctx, s.processName, true); err != nil {
+	if err := s.xrayCore.Stop(); err != nil {
+		s.logger.Error("Failed to stop Xray", zap.Error(err))
 		return &StopResponse{IsStopped: false}, nil
 	}
 
@@ -446,7 +390,7 @@ func (s *XrayService) Restart(ctx context.Context, req *RestartRequest) (*Restar
 		return &RestartResponse{
 			Success: false,
 			Message: "Request already in progress",
-			Version: s.cachedVersion,
+			Version: s.GetVersion(),
 		}, nil
 	}
 	defer s.isStartProcessing.Store(false)
@@ -465,7 +409,7 @@ func (s *XrayService) Restart(ctx context.Context, req *RestartRequest) (*Restar
 					Success: true,
 					Message: "No changes detected, restart skipped",
 					Skipped: true,
-					Version: s.cachedVersion,
+					Version: s.GetVersion(),
 				}, nil
 			}
 		} else {
@@ -478,35 +422,34 @@ func (s *XrayService) Restart(ctx context.Context, req *RestartRequest) (*Restar
 		s.logger.Warn("Force restart requested")
 	}
 
-	// If new config provided, write it
-	if len(req.Config) > 0 {
+	// If new config provided, write it and use it
+	configBytes := req.Config
+	if len(configBytes) > 0 {
 		configPath := filepath.Join(s.configDir, "config.json")
-		if err := os.WriteFile(configPath, req.Config, 0644); err != nil {
+		if err := os.WriteFile(configPath, configBytes, 0644); err != nil {
 			return nil, fmt.Errorf("failed to write config file: %w", err)
 		}
 		s.logger.Info("Updated Xray config", zap.String("path", configPath))
 
 		// Extract users from config for tracking (pass hashes to store them)
 		if s.internal != nil {
-			if err := s.internal.ExtractUsersFromConfig(req.Config, req.Hashes); err != nil {
+			if err := s.internal.ExtractUsersFromConfig(configBytes, req.Hashes); err != nil {
 				s.logger.Warn("Failed to extract users from config", zap.Error(err))
 			}
 		}
+	} else {
+		// Use existing config
+		configBytes = s.xrayCore.GetConfig()
 	}
 
-	// Restart the process
-	if err := s.supervisor.RestartProcess(ctx, s.processName, true); err != nil {
+	// Restart the embedded Xray-core
+	if err := s.xrayCore.Restart(ctx, configBytes); err != nil {
 		s.isXrayOnline = false
 		return &RestartResponse{
 			Success: false,
 			Message: err.Error(),
-			Version: s.cachedVersion,
+			Version: s.GetVersion(),
 		}, nil
-	}
-
-	// Wait for gRPC to be ready
-	if err := s.xtls.WaitForReady(ctx, 10*time.Second); err != nil {
-		s.logger.Warn("Xray restarted but gRPC not ready", zap.Error(err))
 	}
 
 	// Verify health
@@ -517,7 +460,7 @@ func (s *XrayService) Restart(ctx context.Context, req *RestartRequest) (*Restar
 		return &RestartResponse{
 			Success: false,
 			Message: "Xray restarted but health check failed",
-			Version: s.cachedVersion,
+			Version: s.GetVersion(),
 		}, nil
 	}
 
@@ -544,12 +487,7 @@ type GetStatusResponse struct {
 
 // GetStatus returns the current status and version of Xray
 func (s *XrayService) GetStatus(ctx context.Context) (*GetStatusResponse, error) {
-	info, err := s.supervisor.GetProcessInfo(ctx, s.processName)
-	if err != nil {
-		return &GetStatusResponse{IsRunning: false, Version: nil}, nil
-	}
-
-	isRunning := info.StateName == supervisord.ProcessStateRunning
+	isRunning := s.xrayCore.IsRunning()
 
 	var version *string
 	if isRunning {
@@ -567,8 +505,7 @@ func (s *XrayService) GetStatus(ctx context.Context) (*GetStatusResponse, error)
 
 // IsRunning returns true if Xray is running
 func (s *XrayService) IsRunning(ctx context.Context) bool {
-	running, _ := s.supervisor.IsProcessRunning(ctx, s.processName)
-	return running
+	return s.xrayCore.IsRunning()
 }
 
 // GetNodeHealthCheck returns the node health check response (Node.js compatible)
@@ -612,71 +549,9 @@ func (s *XrayService) GetConfig() (json.RawMessage, error) {
 	return data, nil
 }
 
-// GetXtlsClient returns the underlying Xray gRPC client
-func (s *XrayService) GetXtlsClient() *xtls.Client {
-	return s.xtls
-}
-
-// GetVersion returns the Xray version by executing "xray version" command
+// GetVersion returns the Xray version from embedded core
 func (s *XrayService) GetVersion() string {
-	// Return cached version if available
-	if s.cachedVersion != "" {
-		return s.cachedVersion
-	}
-
-	// Execute xray version command
-	cmd := exec.Command(s.xrayBinary, "version")
-	output, err := cmd.Output()
-	if err != nil {
-		s.logger.Debug("Failed to get Xray version", zap.Error(err))
-		return "unknown"
-	}
-
-	// Parse version from output
-	// Output format: "Xray 1.8.x (Xray, Penetrates Everything.) ..."
-	version := s.parseVersionFromOutput(string(output))
-	if version != "" {
-		s.cachedVersion = version
-	}
-
-	return version
-}
-
-// parseVersionFromOutput extracts version string from xray version output
-func (s *XrayService) parseVersionFromOutput(output string) string {
-	// Use regex to match version pattern: Xray X.X.X
-	re := regexp.MustCompile(`Xray\s+(\d+\.\d+\.\d+)`)
-	matches := re.FindStringSubmatch(output)
-	if len(matches) >= 2 {
-		return matches[1]
-	}
-
-	// Fallback: try to find any version-like pattern
-	re2 := regexp.MustCompile(`(\d+\.\d+\.\d+)`)
-	matches2 := re2.FindStringSubmatch(output)
-	if len(matches2) >= 2 {
-		return matches2[1]
-	}
-
-	// Try line by line parsing
-	scanner := bufio.NewScanner(strings.NewReader(output))
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.Contains(line, "Xray") {
-			// Extract version from line like "Xray 1.8.4 (Xray, ...)"
-			parts := strings.Fields(line)
-			if len(parts) >= 2 {
-				return parts[1]
-			}
-		}
-	}
-
-	return "unknown"
-}
-
-// ClearVersionCache clears the cached version
-func (s *XrayService) ClearVersionCache() {
-	s.cachedVersion = ""
+	return s.xrayCore.Version()
 }
 
 // System information helper functions

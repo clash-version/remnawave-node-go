@@ -8,23 +8,20 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/clash-version/remnawave-node-go/internal/config"
 	"github.com/clash-version/remnawave-node-go/internal/middleware"
 	"github.com/clash-version/remnawave-node-go/internal/services"
 	"github.com/clash-version/remnawave-node-go/pkg/logger"
-	"github.com/clash-version/remnawave-node-go/pkg/supervisord"
-	"github.com/clash-version/remnawave-node-go/pkg/xtls"
+	"github.com/clash-version/remnawave-node-go/pkg/xraycore"
+	"github.com/gin-gonic/gin"
 )
 
 // Server represents the HTTP server
 type Server struct {
-	cfg            *config.Config
-	log            *logger.Logger
-	mainServer     *http.Server
-	internalServer *http.Server
-	router         *gin.Engine
-	internalRouter *gin.Engine
+	cfg        *config.Config
+	log        *logger.Logger
+	mainServer *http.Server
+	router     *gin.Engine
 
 	// Services
 	xrayService     *services.XrayService
@@ -33,9 +30,8 @@ type Server struct {
 	visionService   *services.VisionService
 	internalService *services.InternalService
 
-	// Clients
-	xtlsClient       *xtls.Client
-	supervisorClient *supervisord.Client
+	// Embedded Xray-core
+	xrayCore *xraycore.Instance
 }
 
 // New creates a new server instance
@@ -48,24 +44,10 @@ func New(cfg *config.Config, log *logger.Logger) (*Server, error) {
 	router.Use(middleware.Recovery(log))
 	router.Use(middleware.Logger(log))
 
-	// Create internal router (no auth required)
-	internalRouter := gin.New()
-	internalRouter.Use(middleware.Recovery(log))
-
-	// Create Xray gRPC client
-	xtlsClient, err := xtls.NewClient(&xtls.Config{
-		IP:   cfg.XtlsIP,
-		Port: cfg.XtlsPort,
-	}, log.Desugar())
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Xray client: %w", err)
-	}
-
-	// Create Supervisord client
-	supervisorURL := fmt.Sprintf("http://127.0.0.1:%d/RPC2", config.SupervisordRPCPort)
-	supervisorClient := supervisord.NewClient(&supervisord.Config{
-		URL: supervisorURL,
-	}, log.Desugar())
+	// Create embedded Xray-core instance
+	xrayCoreInstance := xraycore.New(&xraycore.Config{
+		Logger: log.Desugar(),
+	})
 
 	// Create services
 	// Internal service must be created first as other services depend on it
@@ -74,30 +56,26 @@ func New(cfg *config.Config, log *logger.Logger) (*Server, error) {
 	}, log.Desugar())
 
 	xrayService := services.NewXrayService(&services.XrayConfig{
-		ProcessName:           "xray",
 		ConfigDir:             "/var/lib/remnawave-node",
-		XrayBinary:            "xray",
 		DisableHashedSetCheck: cfg.DisableHashedSetCheck,
-	}, supervisorClient, xtlsClient, internalService, log.Desugar())
+	}, xrayCoreInstance, internalService, log.Desugar())
 
-	handlerService := services.NewHandlerService(xtlsClient, internalService, log.Desugar())
-	statsService := services.NewStatsService(xtlsClient, log.Desugar())
+	handlerService := services.NewHandlerService(xrayCoreInstance, internalService, log.Desugar())
+	statsService := services.NewStatsService(xrayCoreInstance, log.Desugar())
 	visionService := services.NewVisionService(&services.VisionConfig{
 		BlockTag: "block",
-	}, xtlsClient, log.Desugar())
+	}, xrayCoreInstance, log.Desugar())
 
 	srv := &Server{
-		cfg:              cfg,
-		log:              log,
-		router:           router,
-		internalRouter:   internalRouter,
-		xtlsClient:       xtlsClient,
-		supervisorClient: supervisorClient,
-		xrayService:      xrayService,
-		handlerService:   handlerService,
-		statsService:     statsService,
-		visionService:    visionService,
-		internalService:  internalService,
+		cfg:             cfg,
+		log:             log,
+		router:          router,
+		xrayCore:        xrayCoreInstance,
+		xrayService:     xrayService,
+		handlerService:  handlerService,
+		statsService:    statsService,
+		visionService:   visionService,
+		internalService: internalService,
 	}
 
 	// Setup routes
@@ -106,26 +84,9 @@ func New(cfg *config.Config, log *logger.Logger) (*Server, error) {
 	return srv, nil
 }
 
-// Start starts both main and internal servers
+// Start starts the main HTTP server with mTLS
 func (s *Server) Start() error {
-	errChan := make(chan error, 2)
-
-	// Start main server with mTLS
-	go func() {
-		if err := s.startMainServer(); err != nil {
-			errChan <- fmt.Errorf("main server error: %w", err)
-		}
-	}()
-
-	// Start internal server (HTTP only, localhost)
-	go func() {
-		if err := s.startInternalServer(); err != nil {
-			errChan <- fmt.Errorf("internal server error: %w", err)
-		}
-	}()
-
-	// Wait for any error
-	return <-errChan
+	return s.startMainServer()
 }
 
 // startMainServer starts the main HTTPS server with mTLS
@@ -158,24 +119,6 @@ func (s *Server) startMainServer() error {
 	return s.mainServer.ListenAndServeTLS("", "")
 }
 
-// startInternalServer starts the internal HTTP server on localhost
-func (s *Server) startInternalServer() error {
-	addr := fmt.Sprintf("127.0.0.1:%d", config.XrayInternalAPIPort)
-	s.internalServer = &http.Server{
-		Addr:              addr,
-		Handler:           s.internalRouter,
-		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       60 * time.Second,
-		WriteTimeout:      60 * time.Second,
-	}
-
-	s.log.Infow("Starting internal server",
-		"addr", addr,
-	)
-
-	return s.internalServer.ListenAndServe()
-}
-
 // createTLSConfig creates the mTLS configuration
 func (s *Server) createTLSConfig() (*tls.Config, error) {
 	payload := s.cfg.NodePayload
@@ -202,22 +145,22 @@ func (s *Server) createTLSConfig() (*tls.Config, error) {
 	return tlsConfig, nil
 }
 
-// Shutdown gracefully shuts down the servers
+// Shutdown gracefully shuts down the server and Xray-core
 func (s *Server) Shutdown(ctx context.Context) error {
 	shutdownCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
+
+	// Stop embedded Xray-core
+	if s.xrayCore != nil {
+		if err := s.xrayCore.Stop(); err != nil {
+			s.log.Errorw("Xray-core shutdown error", "error", err)
+		}
+	}
 
 	// Shutdown main server
 	if s.mainServer != nil {
 		if err := s.mainServer.Shutdown(shutdownCtx); err != nil {
 			s.log.Errorw("Main server shutdown error", "error", err)
-		}
-	}
-
-	// Shutdown internal server
-	if s.internalServer != nil {
-		if err := s.internalServer.Shutdown(shutdownCtx); err != nil {
-			s.log.Errorw("Internal server shutdown error", "error", err)
 		}
 	}
 

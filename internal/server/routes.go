@@ -3,9 +3,9 @@ package server
 import (
 	"net/http"
 
-	"github.com/gin-gonic/gin"
 	"github.com/clash-version/remnawave-node-go/internal/middleware"
 	"github.com/clash-version/remnawave-node-go/internal/services"
+	"github.com/gin-gonic/gin"
 )
 
 // Route constants
@@ -63,19 +63,19 @@ func (s *Server) setupRoutes() {
 			handler.POST("/get-inbound-users-count", s.handleGetInboundUsersCount)
 			handler.POST("/get-inbound-users", s.handleGetInboundUsers)
 		}
-	}
 
-	// Vision routes (internal server, no JWT auth, port check instead)
-	vision := s.internalRouter.Group("/" + VisionController)
-	{
-		vision.POST("/block-ip", s.handleBlockIP)
-		vision.POST("/unblock-ip", s.handleUnblockIP)
-	}
+		// Vision routes
+		vision := node.Group("/" + VisionController)
+		{
+			vision.POST("/block-ip", s.handleBlockIP)
+			vision.POST("/unblock-ip", s.handleUnblockIP)
+		}
 
-	// Internal routes (internal server)
-	internal := s.internalRouter.Group("/" + InternalController)
-	{
-		internal.GET("/get-config", s.handleGetConfig)
+		// Internal routes
+		internal := node.Group("/" + InternalController)
+		{
+			internal.GET("/get-config", s.handleGetConfig)
+		}
 	}
 }
 

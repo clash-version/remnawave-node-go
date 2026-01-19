@@ -4,6 +4,12 @@
 # Usage: curl -fsSL https://raw.githubusercontent.com/clash-version/remnawave-node-go/main/install.sh | bash
 # Or: wget -qO- https://raw.githubusercontent.com/clash-version/remnawave-node-go/main/install.sh | bash
 
+# Check if running with bash
+if [ -z "$BASH_VERSION" ]; then
+    echo "Error: This script requires bash. Please run with: bash $0 $*"
+    exit 1
+fi
+
 set -e
 
 # Colors for output
@@ -195,6 +201,8 @@ create_directories() {
     
     mkdir -p "$CONFIG_DIR"
     mkdir -p "$DATA_DIR"
+    mkdir -p "$DATA_DIR/config"
+    mkdir -p /var/log/remnawave-node
     
     chmod 755 "$CONFIG_DIR"
     chmod 755 "$DATA_DIR"
@@ -246,16 +254,8 @@ EOF
 # Node payload (base64 encoded, from panel) - REQUIRED
 # SECRET_KEY=
 
-# SSL Certificate paths (optional, certs are included in SECRET_KEY)
-# SSL_CERT_PATH=/etc/remnawave-node/cert.pem
-# SSL_KEY_PATH=/etc/remnawave-node/key.pem
-
 # API Port (default: 3000)
 # NODE_PORT=3000
-
-# Xray API settings (default: 127.0.0.1:61000)
-# XTLS_IP=127.0.0.1
-# XTLS_PORT=61000
 
 # Log level: debug, info, warn, error
 # LOG_LEVEL=info
@@ -393,16 +393,10 @@ print_instructions() {
     echo "1. Configure your node (get payload from Remnawave panel):"
     echo -e "   ${YELLOW}remnawave-node-config set-payload <your-payload>${NC}"
     echo ""
-    echo "2. Set SSL certificate paths:"
-    echo -e "   ${YELLOW}remnawave-node-config set-cert /path/to/cert.pem /path/to/key.pem${NC}"
-    echo ""
-    echo "3. Or edit configuration directly:"
-    echo -e "   ${YELLOW}nano /etc/remnawave-node/env${NC}"
-    echo ""
-    echo "4. Start the service:"
+    echo "2. Start the service:"
     echo -e "   ${YELLOW}systemctl start remnawave-node${NC}"
     echo ""
-    echo "5. Enable auto-start on boot:"
+    echo "3. Enable auto-start on boot:"
     echo -e "   ${YELLOW}systemctl enable remnawave-node${NC}"
     echo ""
     echo -e "${CYAN}Useful commands:${NC}"
@@ -411,8 +405,10 @@ print_instructions() {
     echo "  - Restart:         systemctl restart remnawave-node"
     echo "  - Config helper:   remnawave-node-config --help"
     echo ""
+    echo -e "${CYAN}Installed components:${NC}"
+    echo "  - Remnawave Node:  ${INSTALL_DIR}/${BINARY_NAME} (with embedded Xray-core)"
+    echo ""
     echo -e "${CYAN}Files:${NC}"
-    echo "  - Binary:          ${INSTALL_DIR}/${BINARY_NAME}"
     echo "  - Config:          ${CONFIG_DIR}/env"
     echo "  - Data:            ${DATA_DIR}"
     echo "  - Service:         ${SERVICE_FILE}"
@@ -441,7 +437,7 @@ uninstall() {
     
     success "Uninstallation complete"
     info "Configuration directory ${CONFIG_DIR} was preserved"
-    info "To remove all data: rm -rf ${CONFIG_DIR} ${DATA_DIR}"
+    info "To remove all data: rm -rf ${CONFIG_DIR} ${DATA_DIR} /var/log/remnawave-node"
 }
 
 # Update function

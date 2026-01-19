@@ -1,182 +1,377 @@
+# Remnawave Node Go
 
 # Remnawave Node Go
 
+[remnawave/node](https://github.com/remnawave/node) 的 Go 语言实现。
+
 将 [remnawave/node](https://github.com/remnawave/node) (TypeScript/NestJS) 迁移到 Go 语言的项目。
+
+**特点：** 单二进制，单端口，内嵌 Xray-core，零外部依赖。
+
+**特点：** 单二进制，单端口，内嵌 Xray-core，零外部依赖。
+
+## 快速开始
 
 ## 快速开始
 
 ### 一键安装 (推荐)
 
+### 一键安装 (推荐)
+
 ```bash
-# 使用 curl
+
+# 使用 curl```bash
+
+curl -fsSL https://raw.githubusercontent.com/clash-version/remnawave-node-go/main/install.sh | bash# 使用 curl
+
 curl -fsSL https://raw.githubusercontent.com/clash-version/remnawave-node-go/main/install.sh | bash
 
 # 或使用 wget
-wget -qO- https://raw.githubusercontent.com/clash-version/remnawave-node-go/main/install.sh | bash
+
+wget -qO- https://raw.githubusercontent.com/clash-version/remnawave-node-go/main/install.sh | bash# 或使用 wget
+
+```wget -qO- https://raw.githubusercontent.com/clash-version/remnawave-node-go/main/install.sh | bash
+
 ```
 
 安装完成后，配置节点：
 
+安装完成后，配置节点：
+
 ```bash
-# 设置节点 payload（从 Remnawave 面板获取）
+
+# 设置节点 payload（从 Remnawave 面板获取）```bash
+
+remnawave-node-config set-payload <your-payload># 设置节点 payload（从 Remnawave 面板获取）
+
 remnawave-node-config set-payload <your-payload>
 
-# 设置 SSL 证书
-remnawave-node-config set-cert /path/to/cert.pem /path/to/key.pem
-
 # 启动服务
+
+systemctl start remnawave-node# 启动服务
+
 systemctl start remnawave-node
 
 # 设置开机自启
-systemctl enable remnawave-node
+
+systemctl enable remnawave-node# 设置开机自启
+
+```systemctl enable remnawave-node
+
 ```
 
 ### 更新
 
+### 更新
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/clash-version/remnawave-node-go/main/install.sh | bash -s -- update
+
+curl -fsSL https://raw.githubusercontent.com/clash-version/remnawave-node-go/main/install.sh | bash -s -- update```bash
+
+```curl -fsSL https://raw.githubusercontent.com/clash-version/remnawave-node-go/main/install.sh | bash -s -- update
+
 ```
 
 ### 卸载
 
+### 卸载
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/clash-version/remnawave-node-go/main/install.sh | bash -s -- uninstall
+
+curl -fsSL https://raw.githubusercontent.com/clash-version/remnawave-node-go/main/install.sh | bash -s -- uninstall```bash
+
+```curl -fsSL https://raw.githubusercontent.com/clash-version/remnawave-node-go/main/install.sh | bash -s -- uninstall
+
 ```
 
 ### 从源码构建
 
+### 从源码构建
+
 ```bash
-# 克隆仓库
-git clone https://github.com/clash-version/remnawave-node-go.git
+
+# 克隆仓库```bash
+
+git clone https://github.com/clash-version/remnawave-node-go.git# 克隆仓库
+
+cd remnawave-node-gogit clone https://github.com/clash-version/remnawave-node-go.git
+
 cd remnawave-node-go
 
 # 构建
+
+make build# 构建
+
 make build
 
 # 运行
-./build/remnawave-node
+
+./build/remnawave-node# 运行
+
+```./build/remnawave-node
+
 ```
 
 ### Docker
 
+### Docker
+
 ```bash
-docker run -d \
-  -e REMNAWAVE_NODE_PAYLOAD="your_base64_payload" \
-  -v /path/to/cert.pem:/etc/ssl/cert.pem \
-  -v /path/to/key.pem:/etc/ssl/key.pem \
-  -p 443:443 \
+
+docker run -d \```bash
+
+  -e SECRET_KEY="your_base64_secret_key" \docker run -d \
+
+  -e NODE_PORT="3000" \  -e REMNAWAVE_NODE_PAYLOAD="your_base64_payload" \
+
+  -p 3000:3000 \  -v /path/to/cert.pem:/etc/ssl/cert.pem \
+
+  ghcr.io/clash-version/remnawave-node-go:latest  -v /path/to/key.pem:/etc/ssl/key.pem \
+
+```  -p 443:443 \
+
   ghcr.io/clash-version/remnawave-node-go:latest
-```
 
-## 常用命令
+## 常用命令```
 
-```bash
+
+
+```bash## 常用命令
+
 # 查看服务状态
-systemctl status remnawave-node
 
-# 查看日志
+systemctl status remnawave-node```bash
+
+# 查看服务状态
+
+# 查看日志systemctl status remnawave-node
+
 journalctl -u remnawave-node -f
 
-# 重启服务
+# 查看日志
+
+# 重启服务journalctl -u remnawave-node -f
+
 systemctl restart remnawave-node
 
-# 配置助手
+# 重启服务
+
+# 配置助手systemctl restart remnawave-node
+
 remnawave-node-config --help
-```
 
-## 项目结构
+```# 配置助手
 
-```
-.
-├── cmd/node/           # 程序入口
-├── internal/
-│   ├── config/         # 配置管理
-│   ├── middleware/     # HTTP 中间件 (JWT, 日志)
-│   ├── server/         # HTTP 服务器和路由
-│   └── services/       # 业务逻辑服务
-├── pkg/
-│   ├── crypto/         # SECRET_KEY 解析
-│   ├── hashedset/      # 配置变更检测
-│   ├── logger/         # Zap 日志
-│   ├── supervisord/    # Supervisord XML-RPC 客户端
-│   └── xtls/           # Xray gRPC 客户端
-├── scripts/            # 安装脚本
-├── deploy/             # 部署配置
-└── .github/workflows/  # CI/CD
-```
+remnawave-node-config --help
 
-## 环境变量
+## 环境变量```
 
-| 变量名 | 必需 | 默认值 | 说明 |
+
+
+| 变量名 | 必需 | 默认值 | 说明 |## 项目结构
+
 |--------|------|--------|------|
-| `SECRET_KEY` | ✅ | - | Base64 编码的 JSON，包含证书和密钥 |
-| `NODE_PORT` | ❌ | 3000 | 主服务器端口 |
-| `XTLS_IP` | ❌ | 127.0.0.1 | Xray gRPC 地址 |
-| `XTLS_PORT` | ❌ | 61000 | Xray gRPC 端口 |
-| `DISABLE_HASHED_SET_CHECK` | ❌ | false | 禁用配置变更检测 |
 
-## 学习资料
+| `SECRET_KEY` | ✅ | - | Base64 编码的 JSON，包含证书和密钥（从面板获取） |```
 
-- Go SDK: https://github.com/Jolymmiles/remnawave-api-go
-- Xray-core 源码: https://github.com/XTLS/Xray-core
+| `NODE_PORT` | ❌ | 3000 | 主服务器端口 |.
 
----
+| `DISABLE_HASHED_SET_CHECK` | ❌ | false | 禁用配置变更检测 |├── cmd/node/           # 程序入口
 
-## 迁移计划
+├── internal/
 
-### 一、项目概述
+## 架构│   ├── config/         # 配置管理
 
-**原项目技术栈：**
-- TypeScript + NestJS (Node.js 框架)
-- JWT 认证
-- gRPC 与 Xray-core 通信 (通过 @remnawave/xtls-sdk)
-- Supervisord 进程管理
-- HTTPS 双向认证 (mTLS)
+│   ├── middleware/     # HTTP 中间件 (JWT, 日志)
 
-**目标技术栈：**
+**单二进制，单端口，零外部依赖**│   ├── server/         # HTTP 服务器和路由
+
+│   └── services/       # 业务逻辑服务
+
+```├── pkg/
+
+┌─────────────────────────────────────────────────────────┐│   ├── crypto/         # SECRET_KEY 解析
+
+│                  Remnawave Node Go                      ││   ├── hashedset/      # 配置变更检测
+
+├─────────────────────────────────────────────────────────┤│   ├── logger/         # Zap 日志
+
+│                                                         ││   └── xraycore/       # 嵌入式 Xray-core 封装
+
+│  ┌─────────────────────────────────────────────────┐   │├── scripts/            # 安装脚本
+
+│  │            Main Server (mTLS + JWT)             │   │├── deploy/             # 部署配置
+
+│  │               Port: $NODE_PORT                  │   │└── .github/workflows/  # CI/CD
+
+│  └──────────────────────┬──────────────────────────┘   │```
+
+│                         │                               │
+
+│                         ▼                               │## 架构
+
+│  ┌─────────────────────────────────────────────────┐   │
+
+│  │           Embedded Xray-core (Go Library)       │   │**单二进制，单端口，零外部依赖**
+
+│  │         直接调用，无需 gRPC/进程间通信            │   │
+
+│  └─────────────────────────────────────────────────┘   │本项目直接嵌入 Xray-core 作为 Go 库，而不是作为外部进程运行。这意味着：
+
+│                                                         │
+
+└─────────────────────────────────────────────────────────┘- ✅ 无需安装 Xray-core 或 Supervisord
+
+```- ✅ 只需要一个端口 (`NODE_PORT`)
+
+- ✅ 更简单的部署和维护
+
+### 与 Node.js 版本对比- ✅ 更低的资源占用
+
+- ✅ 更好的错误处理
+
+| 特性 | Node.js 版本 | Go 版本 |
+
+|------|-------------|---------|## 环境变量
+
+| 运行方式 | Node.js + Xray 进程 | 单一二进制 |
+
+| Xray 通信 | gRPC (端口 61000) | 直接 Go 调用 || 变量名 | 必需 | 默认值 | 说明 |
+
+| 进程管理 | Supervisord | 不需要 ||--------|------|--------|------|
+
+| 端口数量 | 4 个 | 1 个 || `SECRET_KEY` | ✅ | - | Base64 编码的 JSON，包含证书和密钥 |
+
+| 依赖 | Node.js, Xray, Supervisord | 无 || `NODE_PORT` | ❌ | 3000 | 主服务器端口 |
+
+| 内存占用 | ~150MB | ~30MB || `DISABLE_HASHED_SET_CHECK` | ❌ | false | 禁用配置变更检测 |
+
+
+
+## 项目结构## 学习资料
+
+
+
+```- Go SDK: https://github.com/Jolymmiles/remnawave-api-go
+
+.- Xray-core 源码: https://github.com/XTLS/Xray-core
+
+├── cmd/node/           # 程序入口
+
+├── internal/---
+
+│   ├── config/         # 配置管理
+
+│   ├── middleware/     # HTTP 中间件 (JWT, 日志)## 迁移计划
+
+│   ├── server/         # HTTP 服务器和路由
+
+│   └── services/       # 业务逻辑服务### 一、项目概述
+
+├── pkg/
+
+│   ├── crypto/         # SECRET_KEY 解析**原项目技术栈：**
+
+│   ├── hashedset/      # 配置变更检测- TypeScript + NestJS (Node.js 框架)
+
+│   ├── logger/         # Zap 日志- JWT 认证
+
+│   └── xraycore/       # 嵌入式 Xray-core 封装- gRPC 与 Xray-core 通信 (通过 @remnawave/xtls-sdk)
+
+└── install.sh          # 一键安装脚本- Supervisord 进程管理
+
+```- HTTPS 双向认证 (mTLS)
+
+
+
+## API 端点**目标技术栈：**
+
 - Go 1.21+
-- Gin/Fiber/Echo (HTTP 框架，推荐 Gin)
+
+所有 API 都在 `NODE_PORT` 上提供，使用 mTLS + JWT 认证。- Gin/Fiber/Echo (HTTP 框架，推荐 Gin)
+
 - gRPC 客户端连接 Xray-core
-- JWT-go 认证
+
+### Xray 管理- JWT-go 认证
+
 - Supervisord XML-RPC 客户端
 
----
-
-### 二、核心模块分析
-
-#### 1. Xray 模块 (`xray-core/`)
-**功能：**
-- 启动/停止 Xray 进程 (通过 Supervisord)
-- 获取 Xray 状态和版本
-- 节点健康检查
-- 配置管理和热更新检测
-
-**API 端点：**
 | 方法 | 路径 | 说明 |
-|------|------|------|
+
+|------|------|------|---
+
 | POST | `/node/xray/start` | 启动 Xray |
-| POST | `/node/xray/stop` | 停止 Xray |
+
+| POST | `/node/xray/stop` | 停止 Xray |### 二、核心模块分析
+
 | GET | `/node/xray/status` | 获取状态 |
-| GET | `/node/xray/node-health-check` | 健康检查 |
 
-#### 2. Handler 模块 (`handler/`)
+| GET | `/node/xray/node-health-check` | 健康检查 |#### 1. Xray 模块 (`xray-core/`)
+
 **功能：**
-- 用户管理 (添加/删除用户)
-- 支持多协议: VLESS, Trojan, Shadowsocks
-- 批量用户操作
 
-**API 端点：**
+### 用户管理- 启动/停止 Xray 进程 (通过 Supervisord)
+
+- 获取 Xray 状态和版本
+
+| 方法 | 路径 | 说明 |- 节点健康检查
+
+|------|------|------|- 配置管理和热更新检测
+
+| POST | `/node/handler/add-user` | 添加用户 |
+
+| POST | `/node/handler/add-users` | 批量添加用户 |**API 端点：**
+
+| POST | `/node/handler/remove-user` | 删除用户 || 方法 | 路径 | 说明 |
+
+| POST | `/node/handler/remove-users` | 批量删除用户 ||------|------|------|
+
+| GET | `/node/handler/get-inbound-users-count` | 获取用户数 || POST | `/node/xray/start` | 启动 Xray |
+
+| GET | `/node/handler/get-inbound-users` | 获取用户列表 || POST | `/node/xray/stop` | 停止 Xray |
+
+| GET | `/node/xray/status` | 获取状态 |
+
+### 流量统计| GET | `/node/xray/node-health-check` | 健康检查 |
+
+
+
+| 方法 | 路径 | 说明 |#### 2. Handler 模块 (`handler/`)
+
+|------|------|------|**功能：**
+
+| POST | `/node/stats/get-user-online-status` | 用户在线状态 |- 用户管理 (添加/删除用户)
+
+| GET | `/node/stats/get-users-stats` | 用户统计 |- 支持多协议: VLESS, Trojan, Shadowsocks
+
+| GET | `/node/stats/get-system-stats` | 系统统计 |- 批量用户操作
+
+| GET | `/node/stats/get-inbound-stats` | 入站统计 |
+
+| GET | `/node/stats/get-outbound-stats` | 出站统计 |**API 端点：**
+
 | 方法 | 路径 | 说明 |
-|------|------|------|
+
+### IP 管理|------|------|------|
+
 | POST | `/node/handler/add-user` | 添加单个用户 |
-| POST | `/node/handler/add-users` | 批量添加用户 |
-| POST | `/node/handler/remove-user` | 删除单个用户 |
-| POST | `/node/handler/remove-users` | 批量删除用户 |
-| GET | `/node/handler/get-inbound-users-count` | 获取入站用户数 |
+
+| 方法 | 路径 | 说明 || POST | `/node/handler/add-users` | 批量添加用户 |
+
+|------|------|------|| POST | `/node/handler/remove-user` | 删除单个用户 |
+
+| POST | `/vision/block-ip` | 封禁 IP || POST | `/node/handler/remove-users` | 批量删除用户 |
+
+| POST | `/vision/unblock-ip` | 解封 IP || GET | `/node/handler/get-inbound-users-count` | 获取入站用户数 |
+
 | GET | `/node/handler/get-inbound-users` | 获取入站用户列表 |
 
+## 许可证
+
 #### 3. Stats 模块 (`stats/`)
-**功能：**
+
+MIT License**功能：**
+
 - 用户流量统计
 - 系统统计信息
 - 入站/出站统计

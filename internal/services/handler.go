@@ -8,13 +8,13 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/clash-version/remnawave-node-go/pkg/xtls"
+	"github.com/clash-version/remnawave-node-go/pkg/xraycore"
 )
 
 // HandlerService manages user operations for Xray
 type HandlerService struct {
 	logger   *zap.Logger
-	xtls     *xtls.Client
+	xrayCore *xraycore.Instance
 	internal *InternalService
 
 	// Per-inbound mutex for fine-grained locking
@@ -23,10 +23,10 @@ type HandlerService struct {
 }
 
 // NewHandlerService creates a new HandlerService
-func NewHandlerService(xtls *xtls.Client, internal *InternalService, logger *zap.Logger) *HandlerService {
+func NewHandlerService(xrayCore *xraycore.Instance, internal *InternalService, logger *zap.Logger) *HandlerService {
 	return &HandlerService{
 		logger:       logger,
-		xtls:         xtls,
+		xrayCore:     xrayCore,
 		internal:     internal,
 		inboundLocks: make(map[string]*sync.Mutex),
 	}
@@ -115,17 +115,11 @@ type UserInfo struct {
 
 // removeUserFromInbound removes a user from a specific inbound (internal, no lock)
 func (s *HandlerService) removeUserFromInbound(ctx context.Context, tag, email string) error {
-	handler := s.xtls.Handler()
-	if handler == nil {
-		return fmt.Errorf("Xray not connected")
+	if s.xrayCore == nil || !s.xrayCore.IsRunning() {
+		return fmt.Errorf("Xray not running")
 	}
 
-	removeReq := &xtls.RemoveUserRequest{
-		Tag:   tag,
-		Email: email,
-	}
-
-	if err := handler.RemoveUser(ctx, removeReq); err != nil {
+	if err := s.xrayCore.RemoveUser(ctx, tag, email); err != nil {
 		s.logger.Debug("Failed to remove user from inbound (may not exist)",
 			zap.String("email", email),
 			zap.String("tag", tag),
@@ -142,9 +136,8 @@ func (s *HandlerService) removeUserFromInbound(ctx context.Context, tag, email s
 // AddUser adds user(s) to Xray (Node.js compatible format)
 // The request contains multiple UserData items (one per inbound) and hashData for tracking
 func (s *HandlerService) AddUser(ctx context.Context, req *AddUserRequest) (*AddUserResponse, error) {
-	handler := s.xtls.Handler()
-	if handler == nil {
-		errMsg := "Xray not connected"
+	if s.xrayCore == nil || !s.xrayCore.IsRunning() {
+		errMsg := "Xray not running"
 		return &AddUserResponse{Success: false, Error: &errMsg}, nil
 	}
 
@@ -191,40 +184,30 @@ func (s *HandlerService) AddUser(ctx context.Context, req *AddUserRequest) (*Add
 		lock := s.getInboundLock(item.Tag)
 		lock.Lock()
 
-		var addReq *xtls.AddUserRequest
+		var err error
 
 		switch item.Type {
 		case "trojan":
-			addReq = &xtls.AddUserRequest{
-				Tag:      item.Tag,
-				Protocol: "trojan",
-				Account: &xtls.UserAccount{
-					Email:    item.Username,
-					Password: item.Password,
-					Level:    0,
-				},
+			user, createErr := xraycore.CreateTrojanUser(item.Username, item.Password, 0)
+			if createErr != nil {
+				err = createErr
+			} else {
+				err = s.xrayCore.AddUser(ctx, item.Tag, user)
 			}
 		case "vless":
-			addReq = &xtls.AddUserRequest{
-				Tag:      item.Tag,
-				Protocol: "vless",
-				Account: &xtls.UserAccount{
-					Email: item.Username,
-					UUID:  item.UUID,
-					Flow:  item.Flow,
-					Level: 0,
-				},
+			user, createErr := xraycore.CreateVlessUser(item.Username, item.UUID, item.Flow, 0)
+			if createErr != nil {
+				err = createErr
+			} else {
+				err = s.xrayCore.AddUser(ctx, item.Tag, user)
 			}
 		case "shadowsocks":
-			addReq = &xtls.AddUserRequest{
-				Tag:      item.Tag,
-				Protocol: "shadowsocks",
-				Account: &xtls.UserAccount{
-					Email:    item.Username,
-					Password: item.Password,
-					Method:   cipherTypeToMethod(item.CipherType),
-					Level:    0,
-				},
+			cipherType := xraycore.CipherTypeFromInt(int(item.CipherType))
+			user, createErr := xraycore.CreateShadowsocksUser(item.Username, item.Password, cipherType, 0)
+			if createErr != nil {
+				err = createErr
+			} else {
+				err = s.xrayCore.AddUser(ctx, item.Tag, user)
 			}
 		default:
 			s.logger.Warn("Unknown user type", zap.String("type", item.Type))
@@ -232,7 +215,7 @@ func (s *HandlerService) AddUser(ctx context.Context, req *AddUserRequest) (*Add
 			continue
 		}
 
-		if err := handler.AddUser(ctx, addReq); err != nil {
+		if err != nil {
 			s.logger.Error("Failed to add user",
 				zap.String("username", item.Username),
 				zap.String("tag", item.Tag),
@@ -323,9 +306,8 @@ type AddUsersResponse struct {
 
 // AddUsers adds multiple users to Xray (Node.js compatible format)
 func (s *HandlerService) AddUsers(ctx context.Context, req *AddUsersRequest) (*AddUsersResponse, error) {
-	handler := s.xtls.Handler()
-	if handler == nil {
-		errMsg := "Xray not connected"
+	if s.xrayCore == nil || !s.xrayCore.IsRunning() {
+		errMsg := "Xray not running"
 		return &AddUsersResponse{Success: false, Error: &errMsg}, nil
 	}
 
@@ -356,40 +338,30 @@ func (s *HandlerService) AddUsers(ctx context.Context, req *AddUsersRequest) (*A
 			lock := s.getInboundLock(item.Tag)
 			lock.Lock()
 
-			var addReq *xtls.AddUserRequest
+			var err error
 
 			switch item.Type {
 			case "trojan":
-				addReq = &xtls.AddUserRequest{
-					Tag:      item.Tag,
-					Protocol: "trojan",
-					Account: &xtls.UserAccount{
-						Email:    user.UserData.UserId,
-						Password: user.UserData.TrojanPassword,
-						Level:    0,
-					},
+				u, createErr := xraycore.CreateTrojanUser(user.UserData.UserId, user.UserData.TrojanPassword, 0)
+				if createErr != nil {
+					err = createErr
+				} else {
+					err = s.xrayCore.AddUser(ctx, item.Tag, u)
 				}
 			case "vless":
-				addReq = &xtls.AddUserRequest{
-					Tag:      item.Tag,
-					Protocol: "vless",
-					Account: &xtls.UserAccount{
-						Email: user.UserData.UserId,
-						UUID:  user.UserData.VlessUuid,
-						Flow:  item.Flow,
-						Level: 0,
-					},
+				u, createErr := xraycore.CreateVlessUser(user.UserData.UserId, user.UserData.VlessUuid, item.Flow, 0)
+				if createErr != nil {
+					err = createErr
+				} else {
+					err = s.xrayCore.AddUser(ctx, item.Tag, u)
 				}
 			case "shadowsocks":
-				addReq = &xtls.AddUserRequest{
-					Tag:      item.Tag,
-					Protocol: "shadowsocks",
-					Account: &xtls.UserAccount{
-						Email:    user.UserData.UserId,
-						Password: user.UserData.SsPassword,
-						Method:   "chacha20-poly1305", // Default like Node.js
-						Level:    0,
-					},
+				cipherType := xraycore.CipherTypeFromInt(7) // chacha20-poly1305 default
+				u, createErr := xraycore.CreateShadowsocksUser(user.UserData.UserId, user.UserData.SsPassword, cipherType, 0)
+				if createErr != nil {
+					err = createErr
+				} else {
+					err = s.xrayCore.AddUser(ctx, item.Tag, u)
 				}
 			default:
 				s.logger.Warn("Unknown user type", zap.String("type", item.Type))
@@ -397,7 +369,7 @@ func (s *HandlerService) AddUsers(ctx context.Context, req *AddUsersRequest) (*A
 				continue
 			}
 
-			if err := handler.AddUser(ctx, addReq); err != nil {
+			if err != nil {
 				s.logger.Warn("Failed to add user",
 					zap.String("userId", user.UserData.UserId),
 					zap.String("tag", item.Tag),
@@ -438,9 +410,8 @@ type RemoveUserResponse struct {
 
 // RemoveUser removes a user from ALL known inbounds (Node.js compatible)
 func (s *HandlerService) RemoveUser(ctx context.Context, req *RemoveUserRequest) (*RemoveUserResponse, error) {
-	handler := s.xtls.Handler()
-	if handler == nil {
-		errMsg := "Xray not connected"
+	if s.xrayCore == nil || !s.xrayCore.IsRunning() {
+		errMsg := "Xray not running"
 		return &RemoveUserResponse{Success: false, Error: &errMsg}, nil
 	}
 
@@ -463,12 +434,7 @@ func (s *HandlerService) RemoveUser(ctx context.Context, req *RemoveUserRequest)
 			zap.String("username", req.Username),
 			zap.String("tag", tag))
 
-		removeReq := &xtls.RemoveUserRequest{
-			Tag:   tag,
-			Email: req.Username,
-		}
-
-		if err := handler.RemoveUser(ctx, removeReq); err != nil {
+		if err := s.xrayCore.RemoveUser(ctx, tag, req.Username); err != nil {
 			failCount++
 			lastError = err
 		} else {
@@ -516,9 +482,8 @@ type RemoveUsersResponse struct {
 
 // RemoveUsers removes multiple users from ALL known inbounds (Node.js compatible)
 func (s *HandlerService) RemoveUsers(ctx context.Context, req *RemoveUsersRequest) (*RemoveUsersResponse, error) {
-	handler := s.xtls.Handler()
-	if handler == nil {
-		errMsg := "Xray not connected"
+	if s.xrayCore == nil || !s.xrayCore.IsRunning() {
+		errMsg := "Xray not running"
 		return &RemoveUsersResponse{Success: false, Error: &errMsg}, nil
 	}
 
@@ -546,12 +511,7 @@ func (s *HandlerService) RemoveUsers(ctx context.Context, req *RemoveUsersReques
 				zap.String("userId", user.UserId),
 				zap.String("tag", tag))
 
-			removeReq := &xtls.RemoveUserRequest{
-				Tag:   tag,
-				Email: user.UserId,
-			}
-
-			if err := handler.RemoveUser(ctx, removeReq); err != nil {
+			if err := s.xrayCore.RemoveUser(ctx, tag, user.UserId); err != nil {
 				failCount++
 				lastError = err
 			} else {
@@ -594,31 +554,20 @@ type GetInboundUsersResponse struct {
 }
 
 // GetInboundUsers returns the list of users in the specified inbound
+// Note: With embedded Xray-core, we rely on internal tracking
 func (s *HandlerService) GetInboundUsers(ctx context.Context, tag string) (*GetInboundUsersResponse, error) {
-	handler := s.xtls.Handler()
-	if handler == nil {
+	if s.xrayCore == nil || !s.xrayCore.IsRunning() {
 		return &GetInboundUsersResponse{
 			Users: []InboundUserInfo{},
-		}, fmt.Errorf("Xray not connected")
+		}, fmt.Errorf("Xray not running")
 	}
 
-	resp, err := handler.GetInboundUsers(ctx, tag)
-	if err != nil {
-		s.logger.Error("Failed to get inbound users",
-			zap.String("tag", tag),
-			zap.Error(err))
-		return &GetInboundUsersResponse{
-			Users: []InboundUserInfo{},
-		}, err
-	}
-
-	// Convert xtls.InboundUser to InboundUserInfo
-	users := make([]InboundUserInfo, len(resp.Users))
-	for i, u := range resp.Users {
-		level := u.Level
+	// Use internal service to get tracked users for this inbound
+	trackedUsers := s.internal.GetUsersInInbound(tag)
+	users := make([]InboundUserInfo, len(trackedUsers))
+	for i, username := range trackedUsers {
 		users[i] = InboundUserInfo{
-			Username: u.Username,
-			Level:    &level,
+			Username: username,
 		}
 	}
 
@@ -634,25 +583,18 @@ type GetInboundUsersCountResponse struct {
 }
 
 // GetInboundUsersCount returns the count of users in the specified inbound
+// Note: With embedded Xray-core, we rely on internal tracking
 func (s *HandlerService) GetInboundUsersCount(ctx context.Context, tag string) (*GetInboundUsersCountResponse, error) {
-	handler := s.xtls.Handler()
-	if handler == nil {
+	if s.xrayCore == nil || !s.xrayCore.IsRunning() {
 		return &GetInboundUsersCountResponse{
 			Count: 0,
-		}, fmt.Errorf("Xray not connected")
+		}, fmt.Errorf("Xray not running")
 	}
 
-	count, err := handler.GetInboundUsersCount(ctx, tag)
-	if err != nil {
-		s.logger.Error("Failed to get inbound users count",
-			zap.String("tag", tag),
-			zap.Error(err))
-		return &GetInboundUsersCountResponse{
-			Count: 0,
-		}, err
-	}
+	// Use internal service to get count of tracked users
+	count := s.internal.GetUsersCountInInbound(tag)
 
 	return &GetInboundUsersCountResponse{
-		Count: count,
+		Count: int64(count),
 	}, nil
 }

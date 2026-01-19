@@ -4,26 +4,27 @@ package services
 import (
 	"context"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
 	"go.uber.org/zap"
 
-	"github.com/clash-version/remnawave-node-go/pkg/xtls"
+	"github.com/clash-version/remnawave-node-go/pkg/xraycore"
 )
 
 // StatsService manages traffic statistics
 type StatsService struct {
-	mu     sync.RWMutex
-	logger *zap.Logger
-	xtls   *xtls.Client
+	mu       sync.RWMutex
+	logger   *zap.Logger
+	xrayCore *xraycore.Instance
 }
 
 // NewStatsService creates a new StatsService
-func NewStatsService(xtls *xtls.Client, logger *zap.Logger) *StatsService {
+func NewStatsService(xrayCore *xraycore.Instance, logger *zap.Logger) *StatsService {
 	return &StatsService{
-		logger: logger,
-		xtls:   xtls,
+		logger:   logger,
+		xrayCore: xrayCore,
 	}
 }
 
@@ -50,12 +51,11 @@ type GetUserStatsResponse struct {
 
 // GetUserStats gets traffic statistics for a specific user
 func (s *StatsService) GetUserStats(ctx context.Context, req *GetUserStatsRequest) (*GetUserStatsResponse, error) {
-	stats := s.xtls.Stats()
-	if stats == nil {
+	if s.xrayCore == nil || !s.xrayCore.IsRunning() {
 		return nil, nil
 	}
 
-	userStats, err := stats.GetUserStats(ctx, req.Email, req.Reset)
+	userStats, err := s.xrayCore.GetUserStats(ctx, req.Email, req.Reset)
 	if err != nil {
 		s.logger.Warn("Failed to get user stats",
 			zap.String("email", req.Email),
@@ -83,12 +83,11 @@ type GetAllUsersStatsResponse struct {
 // GetAllUsersStats gets traffic statistics for all users
 // Always filters out users with zero traffic (matches Node.js behavior)
 func (s *StatsService) GetAllUsersStats(ctx context.Context, req *GetAllUsersStatsRequest) (*GetAllUsersStatsResponse, error) {
-	stats := s.xtls.Stats()
-	if stats == nil {
+	if s.xrayCore == nil || !s.xrayCore.IsRunning() {
 		return &GetAllUsersStatsResponse{Users: []*UserTraffic{}}, nil
 	}
 
-	allStats, err := stats.GetAllUserStats(ctx, req.Reset)
+	allStats, err := s.xrayCore.GetAllUserStats(ctx, req.Reset)
 	if err != nil {
 		s.logger.Warn("Failed to get all user stats", zap.Error(err))
 		return nil, err
@@ -129,8 +128,7 @@ var startTime = time.Now()
 
 // GetSystemStats gets system-wide statistics (matches Node.js GetSystemStatsResponseModel)
 func (s *StatsService) GetSystemStats(ctx context.Context) (*SystemStatsResponse, error) {
-	stats := s.xtls.Stats()
-	if stats == nil {
+	if s.xrayCore == nil || !s.xrayCore.IsRunning() {
 		// Fallback to local Go stats
 		var memStats runtime.MemStats
 		runtime.ReadMemStats(&memStats)
@@ -149,7 +147,7 @@ func (s *StatsService) GetSystemStats(ctx context.Context) (*SystemStatsResponse
 	}
 
 	// Get Xray's internal system stats
-	sysStats, err := stats.GetSysStats(ctx)
+	sysStats, err := s.xrayCore.GetSystemStats(ctx)
 	if err != nil {
 		s.logger.Warn("Failed to get Xray sys stats", zap.Error(err))
 		// Fallback to local Go stats
@@ -170,16 +168,16 @@ func (s *StatsService) GetSystemStats(ctx context.Context) (*SystemStatsResponse
 	}
 
 	return &SystemStatsResponse{
-		NumGoroutine: sysStats.NumGoroutine,
-		NumGC:        sysStats.NumGC,
-		Alloc:        sysStats.Alloc,
-		TotalAlloc:   sysStats.TotalAlloc,
-		Sys:          sysStats.Sys,
-		Mallocs:      sysStats.Mallocs,
-		Frees:        sysStats.Frees,
-		LiveObjects:  sysStats.LiveObjects,
-		PauseTotalNs: sysStats.PauseTotalNs,
-		Uptime:       sysStats.Uptime,
+		NumGoroutine: int(sysStats.NumGoroutine),
+		NumGC:        int(sysStats.NumGC),
+		Alloc:        int64(sysStats.Alloc),
+		TotalAlloc:   int64(sysStats.TotalAlloc),
+		Sys:          int64(sysStats.Sys),
+		Mallocs:      int64(sysStats.Mallocs),
+		Frees:        int64(sysStats.Frees),
+		LiveObjects:  int64(sysStats.LiveObjects),
+		PauseTotalNs: 0, // Not available from embedded stats
+		Uptime:       int64(sysStats.Uptime),
 	}, nil
 }
 
@@ -195,14 +193,13 @@ type GetUsersStatsAndResetResponse struct {
 
 // GetUsersStatsAndReset gets traffic for specific users and resets counters
 func (s *StatsService) GetUsersStatsAndReset(ctx context.Context, req *GetUsersStatsAndResetRequest) (*GetUsersStatsAndResetResponse, error) {
-	stats := s.xtls.Stats()
-	if stats == nil {
+	if s.xrayCore == nil || !s.xrayCore.IsRunning() {
 		return &GetUsersStatsAndResetResponse{Users: []*UserTraffic{}}, nil
 	}
 
 	users := make([]*UserTraffic, 0, len(req.Emails))
 	for _, email := range req.Emails {
-		userStats, err := stats.GetUserStats(ctx, email, true)
+		userStats, err := s.xrayCore.GetUserStats(ctx, email, true)
 		if err != nil {
 			s.logger.Debug("Failed to get stats for user",
 				zap.String("email", email),
@@ -232,12 +229,11 @@ type GetUserOnlineStatusResponse struct {
 
 // GetUserOnlineStatus checks if a user is currently online
 func (s *StatsService) GetUserOnlineStatus(ctx context.Context, req *GetUserOnlineStatusRequest) (*GetUserOnlineStatusResponse, error) {
-	stats := s.xtls.Stats()
-	if stats == nil {
+	if s.xrayCore == nil || !s.xrayCore.IsRunning() {
 		return &GetUserOnlineStatusResponse{IsOnline: false}, nil
 	}
 
-	online, err := stats.GetUserOnlineStatus(ctx, req.Email)
+	online, err := s.xrayCore.GetUserOnlineStatus(ctx, req.Email)
 	if err != nil {
 		s.logger.Debug("Failed to get user online status",
 			zap.String("email", req.Email),
@@ -270,17 +266,26 @@ type GetInboundStatsResponse struct {
 
 // GetInboundStats gets traffic statistics for a specific inbound
 func (s *StatsService) GetInboundStats(ctx context.Context, req *GetInboundStatsRequest) (*GetInboundStatsResponse, error) {
-	stats := s.xtls.Stats()
-	if stats == nil {
+	if s.xrayCore == nil || !s.xrayCore.IsRunning() {
 		return &GetInboundStatsResponse{Inbound: req.Tag}, nil
 	}
 
-	uplink, downlink, err := stats.GetInboundStats(ctx, req.Tag, req.Reset)
+	pattern := "inbound>>>" + req.Tag + ">>>traffic>>>"
+	stats, err := s.xrayCore.GetStats(ctx, pattern, req.Reset)
 	if err != nil {
 		s.logger.Warn("Failed to get inbound stats",
 			zap.String("tag", req.Tag),
 			zap.Error(err))
 		return nil, err
+	}
+
+	var uplink, downlink int64
+	for name, value := range stats {
+		if strings.HasSuffix(name, "uplink") {
+			uplink = value
+		} else if strings.HasSuffix(name, "downlink") {
+			downlink = value
+		}
 	}
 
 	return &GetInboundStatsResponse{
@@ -312,17 +317,26 @@ type GetOutboundStatsResponse struct {
 
 // GetOutboundStats gets traffic statistics for a specific outbound
 func (s *StatsService) GetOutboundStats(ctx context.Context, req *GetOutboundStatsRequest) (*GetOutboundStatsResponse, error) {
-	stats := s.xtls.Stats()
-	if stats == nil {
+	if s.xrayCore == nil || !s.xrayCore.IsRunning() {
 		return &GetOutboundStatsResponse{Outbound: req.Tag}, nil
 	}
 
-	uplink, downlink, err := stats.GetOutboundStats(ctx, req.Tag, req.Reset)
+	pattern := "outbound>>>" + req.Tag + ">>>traffic>>>"
+	stats, err := s.xrayCore.GetStats(ctx, pattern, req.Reset)
 	if err != nil {
 		s.logger.Warn("Failed to get outbound stats",
 			zap.String("tag", req.Tag),
 			zap.Error(err))
 		return nil, err
+	}
+
+	var uplink, downlink int64
+	for name, value := range stats {
+		if strings.HasSuffix(name, "uplink") {
+			uplink = value
+		} else if strings.HasSuffix(name, "downlink") {
+			downlink = value
+		}
 	}
 
 	return &GetOutboundStatsResponse{
@@ -344,24 +358,42 @@ type GetAllInboundsStatsResponse struct {
 
 // GetAllInboundsStats gets traffic statistics for all inbounds
 func (s *StatsService) GetAllInboundsStats(ctx context.Context, req *GetAllInboundsStatsRequest) (*GetAllInboundsStatsResponse, error) {
-	stats := s.xtls.Stats()
-	if stats == nil {
+	if s.xrayCore == nil || !s.xrayCore.IsRunning() {
 		return &GetAllInboundsStatsResponse{Inbounds: []*InboundStats{}}, nil
 	}
 
-	inbounds, err := stats.GetAllInboundsStats(ctx, req.Reset)
+	// Get all stats with inbound prefix
+	stats, err := s.xrayCore.GetStats(ctx, "inbound>>>", req.Reset)
 	if err != nil {
 		s.logger.Warn("Failed to get all inbounds stats", zap.Error(err))
 		return nil, err
 	}
 
-	result := make([]*InboundStats, 0, len(inbounds))
-	for _, inbound := range inbounds {
-		result = append(result, &InboundStats{
-			Inbound:  inbound.Tag,
-			Uplink:   inbound.Uplink,
-			Downlink: inbound.Downlink,
-		})
+	// Parse and aggregate by inbound tag
+	inboundMap := make(map[string]*InboundStats)
+	for name, value := range stats {
+		// Format: inbound>>>tag>>>traffic>>>uplink/downlink
+		parts := strings.Split(name, ">>>")
+		if len(parts) < 4 {
+			continue
+		}
+		tag := parts[1]
+		direction := parts[3]
+
+		if _, exists := inboundMap[tag]; !exists {
+			inboundMap[tag] = &InboundStats{Inbound: tag}
+		}
+
+		if direction == "uplink" {
+			inboundMap[tag].Uplink = value
+		} else if direction == "downlink" {
+			inboundMap[tag].Downlink = value
+		}
+	}
+
+	result := make([]*InboundStats, 0, len(inboundMap))
+	for _, inbound := range inboundMap {
+		result = append(result, inbound)
 	}
 
 	return &GetAllInboundsStatsResponse{Inbounds: result}, nil
@@ -379,24 +411,42 @@ type GetAllOutboundsStatsResponse struct {
 
 // GetAllOutboundsStats gets traffic statistics for all outbounds
 func (s *StatsService) GetAllOutboundsStats(ctx context.Context, req *GetAllOutboundsStatsRequest) (*GetAllOutboundsStatsResponse, error) {
-	stats := s.xtls.Stats()
-	if stats == nil {
+	if s.xrayCore == nil || !s.xrayCore.IsRunning() {
 		return &GetAllOutboundsStatsResponse{Outbounds: []*OutboundStats{}}, nil
 	}
 
-	outbounds, err := stats.GetAllOutboundsStats(ctx, req.Reset)
+	// Get all stats with outbound prefix
+	stats, err := s.xrayCore.GetStats(ctx, "outbound>>>", req.Reset)
 	if err != nil {
 		s.logger.Warn("Failed to get all outbounds stats", zap.Error(err))
 		return nil, err
 	}
 
-	result := make([]*OutboundStats, 0, len(outbounds))
-	for _, outbound := range outbounds {
-		result = append(result, &OutboundStats{
-			Outbound: outbound.Tag,
-			Uplink:   outbound.Uplink,
-			Downlink: outbound.Downlink,
-		})
+	// Parse and aggregate by outbound tag
+	outboundMap := make(map[string]*OutboundStats)
+	for name, value := range stats {
+		// Format: outbound>>>tag>>>traffic>>>uplink/downlink
+		parts := strings.Split(name, ">>>")
+		if len(parts) < 4 {
+			continue
+		}
+		tag := parts[1]
+		direction := parts[3]
+
+		if _, exists := outboundMap[tag]; !exists {
+			outboundMap[tag] = &OutboundStats{Outbound: tag}
+		}
+
+		if direction == "uplink" {
+			outboundMap[tag].Uplink = value
+		} else if direction == "downlink" {
+			outboundMap[tag].Downlink = value
+		}
+	}
+
+	result := make([]*OutboundStats, 0, len(outboundMap))
+	for _, outbound := range outboundMap {
+		result = append(result, outbound)
 	}
 
 	return &GetAllOutboundsStatsResponse{Outbounds: result}, nil
