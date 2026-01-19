@@ -46,14 +46,14 @@ jobs:
         include:
           - goos: linux
             goarch: amd64
-          - goos: linux
-            goarch: arm64
-          - goos: linux
-            goarch: arm
+          # - goos: linux
+          #   goarch: arm64
+          # - goos: linux
+          #   goarch: arm
           - goos: darwin
             goarch: amd64
-          - goos: darwin
-            goarch: arm64
+          # - goos: darwin
+          #   goarch: arm64
           - goos: windows
             goarch: amd64
 
@@ -169,7 +169,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
