@@ -6,20 +6,25 @@
 
 | 变量名 | 说明 | 示例 |
 |--------|------|------|
-| `REMNAWAVE_NODE_PAYLOAD` | 节点 Payload，从 Remnawave 面板获取 (Base64 编码) | `eyJhcGlVcmwiOi...` |
-| `SSL_CERT_PATH` | SSL 证书路径 | `/etc/remnawave-node/cert.pem` |
-| `SSL_KEY_PATH` | SSL 私钥路径 | `/etc/remnawave-node/key.pem` |
+| `SECRET_KEY` | 节点 Payload，从 Remnawave 面板获取 (Base64 编码) | `eyJhcGlVcmwiOi...` |
 
 ### 可选配置
 
 | 变量名 | 默认值 | 说明 |
 |--------|--------|------|
-| `API_PORT` | 从 Payload 读取 | API 服务端口 |
-| `XRAY_API_PORT` | `61000` | Xray gRPC API 端口 |
-| `INTERNAL_API_PORT` | `61001` | 内部 API 端口 (Vision IP 封禁) |
-| `SUPERVISORD_RPC_PORT` | `61010` | Supervisord RPC 端口 |
+| `NODE_PORT` | `3000` | API 服务端口 |
+| `XTLS_IP` | `127.0.0.1` | Xray gRPC API 地址 |
+| `XTLS_PORT` | `61000` | Xray gRPC API 端口 |
 | `LOG_LEVEL` | `info` | 日志级别: debug, info, warn, error |
 | `DISABLE_HASHED_SET_CHECK` | `false` | 禁用配置哈希比较 |
+
+### 固定端口 (不可配置)
+
+| 端口 | 用途 | 监听地址 |
+|------|------|----------|
+| `61000` | Xray gRPC API | 127.0.0.1 |
+| `61001` | Internal API (Vision) | 127.0.0.1 |
+| `61002` | Supervisord RPC | 127.0.0.1 |
 
 ---
 
