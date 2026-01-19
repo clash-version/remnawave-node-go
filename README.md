@@ -1,122 +1,241 @@
-# Remnawave Node Go
+# Remnawave Node Go# Remnawave Node Go
 
-# Remnawave Node Go
 
-[remnawave/node](https://github.com/remnawave/node) 的 Go 语言实现。
 
-将 [remnawave/node](https://github.com/remnawave/node) (TypeScript/NestJS) 迁移到 Go 语言的项目。
+[remnawave/node](https://github.com/remnawave/node) 的 Go 语言实现。# Remnawave Node Go
 
-**特点：** 单二进制，单端口，内嵌 Xray-core，零外部依赖。
 
-**特点：** 单二进制，单端口，内嵌 Xray-core，零外部依赖。
 
-## 快速开始
+**特点：** 单二进制，单端口，内嵌 Xray-core，零外部依赖。[remnawave/node](https://github.com/remnawave/node) 的 Go 语言实现。
 
-## 快速开始
 
-### 一键安装 (推荐)
 
-### 一键安装 (推荐)
+## 快速开始将 [remnawave/node](https://github.com/remnawave/node) (TypeScript/NestJS) 迁移到 Go 语言的项目。
 
-```bash
 
-# 使用 curl```bash
 
-curl -fsSL https://raw.githubusercontent.com/clash-version/remnawave-node-go/main/install.sh | bash# 使用 curl
+### 一键安装**特点：** 单二进制，单端口，内嵌 Xray-core，零外部依赖。
+
+
+
+```bash**特点：** 单二进制，单端口，内嵌 Xray-core，零外部依赖。
 
 curl -fsSL https://raw.githubusercontent.com/clash-version/remnawave-node-go/main/install.sh | bash
 
-# 或使用 wget
+```## 快速开始
 
-wget -qO- https://raw.githubusercontent.com/clash-version/remnawave-node-go/main/install.sh | bash# 或使用 wget
 
-```wget -qO- https://raw.githubusercontent.com/clash-version/remnawave-node-go/main/install.sh | bash
 
-```
+安装后配置：## 快速开始
 
-安装完成后，配置节点：
 
-安装完成后，配置节点：
 
-```bash
-
-# 设置节点 payload（从 Remnawave 面板获取）```bash
-
-remnawave-node-config set-payload <your-payload># 设置节点 payload（从 Remnawave 面板获取）
+```bash### 一键安装 (推荐)
 
 remnawave-node-config set-payload <your-payload>
 
-# 启动服务
+systemctl start remnawave-node### 一键安装 (推荐)
 
-systemctl start remnawave-node# 启动服务
+systemctl enable remnawave-node
 
-systemctl start remnawave-node
+``````bash
 
-# 设置开机自启
 
-systemctl enable remnawave-node# 设置开机自启
 
-```systemctl enable remnawave-node
+### 更新# 使用 curl```bash
 
-```
 
-### 更新
 
-### 更新
+```bashcurl -fsSL https://raw.githubusercontent.com/clash-version/remnawave-node-go/main/install.sh | bash# 使用 curl
 
-```bash
+curl -fsSL https://raw.githubusercontent.com/clash-version/remnawave-node-go/main/install.sh | bash -s -- update
 
-curl -fsSL https://raw.githubusercontent.com/clash-version/remnawave-node-go/main/install.sh | bash -s -- update```bash
+```curl -fsSL https://raw.githubusercontent.com/clash-version/remnawave-node-go/main/install.sh | bash
 
-```curl -fsSL https://raw.githubusercontent.com/clash-version/remnawave-node-go/main/install.sh | bash -s -- update
 
-```
 
-### 卸载
+### 卸载# 或使用 wget
 
-### 卸载
 
-```bash
 
-curl -fsSL https://raw.githubusercontent.com/clash-version/remnawave-node-go/main/install.sh | bash -s -- uninstall```bash
+```bashwget -qO- https://raw.githubusercontent.com/clash-version/remnawave-node-go/main/install.sh | bash# 或使用 wget
 
-```curl -fsSL https://raw.githubusercontent.com/clash-version/remnawave-node-go/main/install.sh | bash -s -- uninstall
+curl -fsSL https://raw.githubusercontent.com/clash-version/remnawave-node-go/main/install.sh | bash -s -- uninstall
 
-```
+``````wget -qO- https://raw.githubusercontent.com/clash-version/remnawave-node-go/main/install.sh | bash
 
-### 从源码构建
 
-### 从源码构建
 
-```bash
+### Docker```
 
-# 克隆仓库```bash
 
-git clone https://github.com/clash-version/remnawave-node-go.git# 克隆仓库
 
-cd remnawave-node-gogit clone https://github.com/clash-version/remnawave-node-go.git
+```bash安装完成后，配置节点：
 
-cd remnawave-node-go
+docker run -d \
 
-# 构建
+  -e SECRET_KEY="your_base64_secret_key" \安装完成后，配置节点：
 
-make build# 构建
+  -e NODE_PORT="3000" \
+
+  -p 3000:3000 \```bash
+
+  ghcr.io/clash-version/remnawave-node-go:latest
+
+```# 设置节点 payload（从 Remnawave 面板获取）```bash
+
+
+
+### 从源码构建remnawave-node-config set-payload <your-payload># 设置节点 payload（从 Remnawave 面板获取）
+
+
+
+```bashremnawave-node-config set-payload <your-payload>
+
+git clone https://github.com/clash-version/remnawave-node-go.git
+
+cd remnawave-node-go# 启动服务
 
 make build
 
-# 运行
-
-./build/remnawave-node# 运行
-
-```./build/remnawave-node
+./build/remnawave-nodesystemctl start remnawave-node# 启动服务
 
 ```
 
-### Docker
+systemctl start remnawave-node
 
-### Docker
+## 环境变量
+
+# 设置开机自启
+
+| 变量名 | 必需 | 默认值 | 说明 |
+
+|--------|------|--------|------|systemctl enable remnawave-node# 设置开机自启
+
+| `SECRET_KEY` | ✅ | - | Base64 编码的密钥（从面板获取） |
+
+| `NODE_PORT` | ❌ | 3000 | 服务端口 |```systemctl enable remnawave-node
+
+| `DISABLE_HASHED_SET_CHECK` | ❌ | false | 禁用配置变更检测 |
+
+```
+
+## 架构
+
+### 更新
+
+```
+
+┌─────────────────────────────────────────────────────┐### 更新
+
+│              Remnawave Node Go                      │
+
+├─────────────────────────────────────────────────────┤```bash
+
+│  ┌───────────────────────────────────────────────┐  │
+
+│  │         Main Server (mTLS + JWT)              │  │curl -fsSL https://raw.githubusercontent.com/clash-version/remnawave-node-go/main/install.sh | bash -s -- update```bash
+
+│  │            Port: $NODE_PORT                   │  │
+
+│  └─────────────────────┬─────────────────────────┘  │```curl -fsSL https://raw.githubusercontent.com/clash-version/remnawave-node-go/main/install.sh | bash -s -- update
+
+│                        │                            │
+
+│                        ▼                            │```
+
+│  ┌───────────────────────────────────────────────┐  │
+
+│  │       Embedded Xray-core (Go Library)         │  │### 卸载
+
+│  │      直接调用，无需 gRPC/进程间通信            │  │
+
+│  └───────────────────────────────────────────────┘  │### 卸载
+
+└─────────────────────────────────────────────────────┘
+
+``````bash
+
+
+
+### 与 Node.js 版本对比curl -fsSL https://raw.githubusercontent.com/clash-version/remnawave-node-go/main/install.sh | bash -s -- uninstall```bash
+
+
+
+| 特性 | Node.js 版本 | Go 版本 |```curl -fsSL https://raw.githubusercontent.com/clash-version/remnawave-node-go/main/install.sh | bash -s -- uninstall
+
+|------|-------------|---------|
+
+| 运行方式 | Node.js + Xray 进程 | 单一二进制 |```
+
+| Xray 通信 | gRPC (端口 61000) | 直接 Go 调用 |
+
+| 进程管理 | Supervisord | 不需要 |### 从源码构建
+
+| 端口数量 | 4 个 | 1 个 |
+
+| 依赖 | Node.js, Xray, Supervisord | 无 |### 从源码构建
+
+| 内存占用 | ~150MB | ~30MB |
 
 ```bash
+
+## 常用命令
+
+# 克隆仓库```bash
+
+```bash
+
+systemctl status remnawave-node    # 查看状态git clone https://github.com/clash-version/remnawave-node-go.git# 克隆仓库
+
+journalctl -u remnawave-node -f    # 查看日志
+
+systemctl restart remnawave-node   # 重启服务cd remnawave-node-gogit clone https://github.com/clash-version/remnawave-node-go.git
+
+```
+
+cd remnawave-node-go
+
+## 项目结构
+
+# 构建
+
+```
+
+├── cmd/node/           # 程序入口make build# 构建
+
+├── internal/
+
+│   ├── config/         # 配置管理make build
+
+│   ├── middleware/     # HTTP 中间件
+
+│   ├── server/         # HTTP 服务器# 运行
+
+│   └── services/       # 业务逻辑
+
+├── pkg/./build/remnawave-node# 运行
+
+│   ├── crypto/         # 密钥解析
+
+│   ├── hashedset/      # 配置变更检测```./build/remnawave-node
+
+│   ├── logger/         # 日志
+
+│   └── xraycore/       # 嵌入式 Xray-core```
+
+└── install.sh          # 安装脚本
+
+```### Docker
+
+
+
+## License### Docker
+
+
+
+MIT```bash
+
 
 docker run -d \```bash
 
