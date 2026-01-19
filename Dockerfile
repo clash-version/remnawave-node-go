@@ -1,30 +1,58 @@
-# Build stage# Build stage# Build stage
+# Build stage# Build stage# Build stage# Build stage
+
+FROM golang:1.23-alpine AS builder
 
 FROM golang:1.25-alpine AS builder
 
-# Install build dependencies
-
 RUN apk add --no-cache git
 
-
-
-# Set working directory# Install build dependencies# Install build dependencies
+# Install build dependencies
 
 WORKDIR /app
 
-RUN apk add --no-cache gitRUN apk add --no-cache git make
-
-# Copy go mod files
+RUN apk add --no-cache git
 
 COPY go.mod go.sum ./
 
+RUN go mod download
 
+
+
+COPY . .# Set working directory# Install build dependencies# Install build dependencies
+
+
+
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /remnawave-node ./cmd/nodeWORKDIR /app
+
+
+
+# Final stageRUN apk add --no-cache gitRUN apk add --no-cache git make
+
+FROM alpine:3.19
+
+# Copy go mod files
+
+RUN apk add --no-cache ca-certificates tzdata
+
+COPY go.mod go.sum ./
+
+RUN mkdir -p /var/lib/remnawave-node /var/log/remnawave-node
+
+
+
+COPY --from=builder /remnawave-node /usr/local/bin/remnawave-node
 
 # Download dependencies# Set working directory# Set working directory
 
+ENV NODE_PORT=3000
+
 RUN go mod download
 
+EXPOSE 3000
+
 WORKDIR /appWORKDIR /app
+
+CMD ["/usr/local/bin/remnawave-node"]
 
 # Copy source code
 
