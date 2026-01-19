@@ -131,7 +131,7 @@ jobs:
           prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
 
   docker:
-    needs: [test, lint]
+    needs: [test]
     runs-on: ubuntu-latest
     if: github.event_name != 'pull_request'
     permissions:
