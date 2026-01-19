@@ -243,18 +243,19 @@ EOF
 # Remnawave Node Go Environment Configuration
 # Uncomment and modify as needed
 
-# SSL Certificate paths (required)
+# Node payload (base64 encoded, from panel) - REQUIRED
+# SECRET_KEY=
+
+# SSL Certificate paths (optional, certs are included in SECRET_KEY)
 # SSL_CERT_PATH=/etc/remnawave-node/cert.pem
 # SSL_KEY_PATH=/etc/remnawave-node/key.pem
 
-# Node payload (base64 encoded, from panel)
-# REMNAWAVE_NODE_PAYLOAD=
+# API Port (default: 3000)
+# NODE_PORT=3000
 
-# API Port (default: from payload)
-# API_PORT=443
-
-# Xray API Port (default: 61000)
-# XRAY_API_PORT=61000
+# Xray API settings (default: 127.0.0.1:61000)
+# XTLS_IP=127.0.0.1
+# XTLS_PORT=61000
 
 # Log level: debug, info, warn, error
 # LOG_LEVEL=info
@@ -303,11 +304,11 @@ set_payload() {
         exit 1
     fi
     
-    # Update or add payload in env file
-    if grep -q "^REMNAWAVE_NODE_PAYLOAD=" "$ENV_FILE" 2>/dev/null; then
-        sed -i "s|^REMNAWAVE_NODE_PAYLOAD=.*|REMNAWAVE_NODE_PAYLOAD=${payload}|" "$ENV_FILE"
+    # Update or add payload in env file (using SECRET_KEY as the program expects)
+    if grep -q "^SECRET_KEY=" "$ENV_FILE" 2>/dev/null; then
+        sed -i "s|^SECRET_KEY=.*|SECRET_KEY=${payload}|" "$ENV_FILE"
     else
-        echo "REMNAWAVE_NODE_PAYLOAD=${payload}" >> "$ENV_FILE"
+        echo "SECRET_KEY=${payload}" >> "$ENV_FILE"
     fi
     
     echo "Payload updated. Restart service to apply: systemctl restart remnawave-node"
