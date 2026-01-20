@@ -13,8 +13,8 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /remnawave-node ./cmd/node
 
 # Download Xray assets
-RUN wget -O geoip.dat https://github.com/v2fly/geoip/releases/latest/download/geoip.dat
-RUN wget -O geosite.dat https://github.com/v2fly/domain-list-community/releases/latest/download/geosite.dat
+RUN wget -O geoip.dat https://github.com/v2fly/geoip/releases/download/202601050204/geoip.dat
+RUN wget -O geosite.dat https://github.com/v2fly/domain-list-community/releases/download/20260120130631/dlc.dat
 
 # Final stage - minimal runtime
 FROM alpine:3.19
