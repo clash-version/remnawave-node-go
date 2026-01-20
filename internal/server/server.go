@@ -42,6 +42,7 @@ func New(cfg *config.Config, log *logger.Logger) (*Server, error) {
 	// Create main router
 	router := gin.New()
 	router.Use(middleware.Recovery(log))
+	router.Use(middleware.Decompress(log)) // Handle gzip compressed request bodies
 	router.Use(middleware.Logger(log))
 
 	// Create embedded Xray-core instance
@@ -80,6 +81,15 @@ func New(cfg *config.Config, log *logger.Logger) (*Server, error) {
 
 	// Setup routes
 	srv.setupRoutes()
+
+	// Try to restore Xray state from config file
+	go func() {
+		// Give the server a moment to start
+		time.Sleep(1 * time.Second)
+		if err := srv.restoreXrayState(); err != nil {
+			log.Warn("Failed to restore Xray state", "error", err)
+		}
+	}()
 
 	return srv, nil
 }
@@ -165,4 +175,39 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// restoreXrayState tries to start Xray from existing config file
+func (s *Server) restoreXrayState() error {
+	configBytes, err := s.xrayService.GetConfig()
+	if err != nil {
+		return err // file might not exist or other error
+	}
+	if len(configBytes) == 0 {
+		return nil // no config
+	}
+
+	s.log.Info("Restoring Xray state from config file...")
+
+	// Create a dummy start request with just the config
+	// We don't have the "hashes" here, so we might lose optimization on next sync, but that's fine
+	// Or we could try to re-calculate them if we had the logic exposed.
+	// For now, just starting it is the priority.
+	ctx := context.Background()
+
+	// We need to parse it to pass valid StartRequest if we want to use Service.Start,
+	// or we can use xrayCore directly?
+	// xrayService.Start expects StartRequest structure which wraps the config.
+	// But StartRequest expects separate fields.
+	// Actually, xrayService.Start takes xrayConfig map, generates full config, and writes to file.
+	// Since we already have the FULL config file (generated), we should probably use xrayCore.Start directly
+	// OR, update xrayService to support starting from file.
+
+	// Let's use xrayCore direct start for restoration, but we need to update xrayService state (online status)
+	// The Cleanest way is to decode the config and call xrayService.Start, BUT `config.json` is the *Result* of `generateApiConfig`.
+	// So if we feed it back to `Start`, it might get wrapped again (policy/stats added again).
+	// `xrayService.GetConfig()` reads `config.json` which is the FULL config.
+
+	// Let's modify xrayService to allow "StartFromExistingConfig"
+	return s.xrayService.RestoreStart(ctx)
 }

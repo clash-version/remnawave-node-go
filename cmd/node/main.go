@@ -10,10 +10,12 @@ import (
 	"github.com/clash-version/remnawave-node-go/internal/server"
 	"github.com/clash-version/remnawave-node-go/internal/services"
 	"github.com/clash-version/remnawave-node-go/pkg/logger"
+
+	_ "github.com/xtls/xray-core/main/distro/all"
 )
 
 var (
-	Version   = "dev"
+	Version   = "1.0.1"
 	BuildTime = "unknown"
 )
 

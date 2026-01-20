@@ -48,7 +48,8 @@ func New() *Logger {
 	)
 
 	// Create logger
-	logger := zap.New(core, zap.AddCaller(), zap.AddStacktrace(zapcore.ErrorLevel))
+	// Only add stack traces for DPanic level and above (panics), not for regular errors
+	logger := zap.New(core, zap.AddCaller(), zap.AddStacktrace(zapcore.DPanicLevel))
 
 	return &Logger{logger.Sugar()}
 }

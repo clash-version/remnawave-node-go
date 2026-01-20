@@ -119,6 +119,18 @@ func generateApiConfig(config map[string]interface{}) map[string]interface{} {
 	// Build and add policy configuration (required for user stats)
 	result["policy"] = defaultPolicyConfig
 
+	// Only enable debug logging if NODE_ENV is development
+	logLevel := "warning"
+	if os.Getenv("NODE_ENV") == "development" {
+		logLevel = "debug"
+	}
+
+	result["log"] = map[string]interface{}{
+		"loglevel": logLevel,
+		"access":   "",
+		"error":    "",
+	}
+
 	return result
 }
 
@@ -501,6 +513,58 @@ func (s *XrayService) GetStatus(ctx context.Context) (*GetStatusResponse, error)
 		IsRunning: isRunning,
 		Version:   version,
 	}, nil
+}
+
+// RestoreStart attempts to start Xray from the existing config file on disk
+func (s *XrayService) RestoreStart(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.xrayCore.IsRunning() {
+		return nil
+	}
+
+	configBytes, err := s.GetConfig()
+	if err != nil {
+		return err
+	}
+	if len(configBytes) == 0 {
+		return fmt.Errorf("no config file found")
+	}
+
+	s.logger.Info("Attempting to restore Xray from local config...")
+
+	// Extract users from config to restore internal state
+	if s.internal != nil {
+		// We pass nil for hashes as we can't recover them easily,
+		// but at least user mapping will be restored for removal login
+		// Note: passing nil hashes might reset tracking, so be careful.
+		// However, ExtractUsersFromConfig clears existing state anyway.
+		if err := s.internal.ExtractUsersFromConfig(configBytes, nil); err != nil {
+			s.logger.Warn("Failed to restore users from config", zap.Error(err))
+		}
+	}
+
+	// Start Xray
+	if err := s.xrayCore.Start(ctx, configBytes); err != nil {
+		s.isXrayOnline = false
+		return fmt.Errorf("restore failed: %w", err)
+	}
+
+	// Verify health
+	if !s.checkXrayHealth(ctx) {
+		s.isXrayOnline = false
+		return fmt.Errorf("restored Xray health check failed")
+	}
+
+	version := s.GetVersion()
+	s.isConfigured = true
+	s.isXrayOnline = true
+
+	s.logger.Info("Xray restored successfully from local config",
+		zap.String("version", version))
+
+	return nil
 }
 
 // IsRunning returns true if Xray is running
