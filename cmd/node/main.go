@@ -10,12 +10,13 @@ import (
 	"github.com/clash-version/remnawave-node-go/internal/server"
 	"github.com/clash-version/remnawave-node-go/internal/services"
 	"github.com/clash-version/remnawave-node-go/pkg/logger"
+	"github.com/joho/godotenv"
 
 	_ "github.com/xtls/xray-core/main/distro/all"
 )
 
 var (
-	Version   = "1.0.1"
+	Version   = "1.0.2"
 	BuildTime = "unknown"
 )
 
@@ -23,6 +24,9 @@ func main() {
 	// Initialize logger
 	log := logger.New()
 	defer log.Sync()
+
+	// Load .env file
+	_ = godotenv.Load()
 
 	// Set node version for API responses
 	services.SetNodeVersion(Version)

@@ -12,6 +12,10 @@ COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /remnawave-node ./cmd/node
 
+# Download Xray assets
+RUN wget -O geoip.dat https://github.com/v2fly/geoip/releases/latest/download/geoip.dat
+RUN wget -O geosite.dat https://github.com/v2fly/domain-list-community/releases/latest/download/geosite.dat
+
 # Final stage - minimal runtime
 FROM alpine:3.19
 
@@ -20,8 +24,11 @@ RUN apk add --no-cache ca-certificates tzdata
 RUN mkdir -p /var/lib/remnawave-node /var/log/remnawave-node
 
 COPY --from=builder /remnawave-node /usr/local/bin/remnawave-node
+COPY --from=builder /app/geoip.dat /usr/local/bin/geoip.dat
+COPY --from=builder /app/geosite.dat /usr/local/bin/geosite.dat
 
 ENV NODE_PORT=3000
+ENV XRAY_LOCATION_ASSET=/usr/local/bin/
 
 EXPOSE 3000
 

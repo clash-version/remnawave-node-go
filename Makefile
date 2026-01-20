@@ -1,5 +1,11 @@
 # Remnawave Node Go - Makefile
 
+# Load environment variables from .env file if it exists
+ifneq (,$(wildcard ./.env))
+    include .env
+    export
+endif
+
 # Variables
 BINARY_NAME=remnawave-node
 VERSION?=$(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
