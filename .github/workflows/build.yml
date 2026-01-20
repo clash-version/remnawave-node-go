@@ -46,14 +46,14 @@ jobs:
         include:
           - goos: linux
             goarch: amd64
-          # - goos: linux
-          #   goarch: arm64
-          # - goos: linux
-          #   goarch: arm
+          - goos: linux
+            goarch: arm64
+          - goos: linux
+            goarch: arm
           - goos: darwin
             goarch: amd64
-          # - goos: darwin
-          #   goarch: arm64
+          - goos: darwin
+            goarch: arm64
           - goos: windows
             goarch: amd64
 
@@ -104,13 +104,18 @@ jobs:
 
       - name: Create archives
         run: |
+          VERSION=${GITHUB_REF_NAME#v}
           cd dist
           for f in ${{ env.BINARY_NAME }}_*; do
             if [[ "$f" == *.exe ]]; then
               base="${f%.exe}"
-              zip "${base}.zip" "$f"
+              # Add version to filename: remnawave-node_linux_amd64 -> remnawave-node_1.0.1_linux_amd64
+              new_name="${{ env.BINARY_NAME }}_${VERSION}_${base#${{ env.BINARY_NAME }}_}"
+              zip "${new_name}.zip" "$f"
             else
-              tar -czvf "${f}.tar.gz" "$f"
+              # Add version to filename
+              new_name="${{ env.BINARY_NAME }}_${VERSION}_${f#${{ env.BINARY_NAME }}_}"
+              tar -czvf "${new_name}.tar.gz" "$f"
             fi
           done
 
@@ -169,7 +174,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
