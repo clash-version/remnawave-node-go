@@ -198,14 +198,14 @@ download_and_install() {
 # Download geo files
 download_geo_files() {
     info "Downloading geoip.dat..."
-    if curl -fsSL -o "${INSTALL_DIR}/geoip.dat" "https://github.com/v2fly/geoip/releases/latest/download/geoip.dat"; then
+    if curl -fsSL -o "${INSTALL_DIR}/geoip.dat" "https://github.com/v2fly/geoip/releases/download/202601050204/geoip.dat"; then
         success "geoip.dat downloaded"
     else
         warning "Failed to download geoip.dat"
     fi
 
     info "Downloading geosite.dat..."
-    if curl -fsSL -o "${INSTALL_DIR}/geosite.dat" "https://github.com/v2fly/domain-list-community/releases/latest/download/geosite.dat"; then
+    if curl -fsSL -o "${INSTALL_DIR}/geosite.dat" "https://github.com/v2fly/domain-list-community/releases/download/20260120130631/dlc.dat"; then
         success "geosite.dat downloaded"
     else
         warning "Failed to download geosite.dat"
