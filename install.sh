@@ -162,12 +162,12 @@ download_and_install() {
     info "Extracting archive..."
     tar -xzf "$archive_file" -C "$temp_dir"
 
-    # Find the binary (it might be in a subdirectory)
-    local binary_path=$(find "$temp_dir" -name "$BINARY_NAME" -type f -executable 2>/dev/null | head -1)
+    # Find the binary (it might be in a subdirectory or have a suffix)
+    local binary_path=$(find "$temp_dir" -name "${BINARY_NAME}*" -type f -not -name "*.tar.gz" -executable 2>/dev/null | head -1)
     
     if [[ -z "$binary_path" ]]; then
         # Try without executable flag (in case permissions aren't set)
-        binary_path=$(find "$temp_dir" -name "$BINARY_NAME" -type f 2>/dev/null | head -1)
+        binary_path=$(find "$temp_dir" -name "${BINARY_NAME}*" -type f -not -name "*.tar.gz" 2>/dev/null | head -1)
     fi
 
     if [[ -z "$binary_path" ]]; then
